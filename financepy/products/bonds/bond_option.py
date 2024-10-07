@@ -2,7 +2,7 @@
 # Copyright (C) 2018, 2019, 2020 Dominic O'Kane
 ##############################################################################
 
-from ...utils.global_vars import gDaysInYear
+from ...utils.global_vars import g_days_in_year
 from ...utils.error import FinError
 from ...utils.date import Date
 from ...utils.helpers import label_to_string, check_argument_types
@@ -38,106 +38,104 @@ class BondOption():
 
     def __init__(self,
                  bond: Bond,
-                 expiry_date: Date,
+                 expiry_dt: Date,
                  strike_price: float,
-                 face_amount: float,
                  option_type: OptionTypes):
 
         check_argument_types(self.__init__, locals())
 
-        self._expiry_date = expiry_date
-        self._strike_price = strike_price
-        self._bond = bond
-        self._option_type = option_type
-        self._face_amount = face_amount
+        self.expiry_dt = expiry_dt
+        self.strike_price = strike_price
+        self.bond = bond
+        self.option_type = option_type
+        self.par = 100.0
 
 ###############################################################################
 
     def value(self,
-              valuation_date: Date,
+              value_dt: Date,
               discount_curve: DiscountCurve,
               model):
         """ Value a bond option (option on a bond) using a specified model
         which include the Hull-White, Black-Karasinski and Black-Derman-Toy
         model which are all implemented as short rate tree models. """
 
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tmat = (self._bond._maturity_date - valuation_date) / gDaysInYear
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        t_mat = (self.bond.maturity_dt - value_dt) / g_days_in_year
 
         df_times = discount_curve._times
         df_values = discount_curve._dfs
 
-        # We need all of the flows in case the option is American
+        # We need all the flows in case the option is American
         # and some occur before expiry
-        flow_dates = self._bond._coupon_dates
-        flow_amounts = self._bond._flow_amounts
+        flow_dts = self.bond.cpn_dts
+        flow_amounts = self.bond.flow_amounts
 
-        coupon_times = []
-        coupon_flows = []
+        cpn_times = []
+        cpn_flows = []
 
-        num_flows = len(self._bond._coupon_dates)
+        num_flows = len(self.bond.cpn_dts)
 
         # Want the first flow to be the previous coupon date
         # This is needed to calculate accrued correctly
         for i in range(1, num_flows):
-            pcd = flow_dates[i-1]
-            ncd = flow_dates[i]
-            if pcd < valuation_date and ncd > valuation_date:
-                flow_time = (pcd - valuation_date) / gDaysInYear
-                coupon_times.append(flow_time)
-                coupon_flows.append(flow_amounts[i])
+            pcd = flow_dts[i-1]
+            ncd = flow_dts[i]
+            if pcd < value_dt and ncd > value_dt:
+                flow_time = (pcd - value_dt) / g_days_in_year
+                cpn_times.append(flow_time)
+                cpn_flows.append(flow_amounts[i])
                 break
 
         for i in range(1, num_flows):
-            if flow_dates[i] == valuation_date:
-                coupon_times.append(0.0)
-                coupon_flows.append(flow_amounts[i])
+            if flow_dts[i] == value_dt:
+                cpn_times.append(0.0)
+                cpn_flows.append(flow_amounts[i])
 
         # Now calculate the remaining coupons
         for i in range(1, num_flows):
-            ncd = flow_dates[i]
-            if ncd > valuation_date:
-                flow_time = (ncd - valuation_date) / gDaysInYear
-                coupon_times.append(flow_time)
-                coupon_flows.append(flow_amounts[i])
+            ncd = flow_dts[i]
+            if ncd > value_dt:
+                flow_time = (ncd - value_dt) / g_days_in_year
+                cpn_times.append(flow_time)
+                cpn_flows.append(flow_amounts[i])
 
         ##################################################################
 
-        coupon_times = np.array(coupon_times)
-        coupon_flows = np.array(coupon_flows)
+        cpn_times = np.array(cpn_times)
+        cpn_flows = np.array(cpn_flows)
 
         exercise_type = FinExerciseTypes.AMERICAN
 
-        if self._option_type == OptionTypes.EUROPEAN_CALL \
-                or self._option_type == OptionTypes.EUROPEAN_PUT:
+        if self.option_type == OptionTypes.EUROPEAN_CALL \
+                or self.option_type == OptionTypes.EUROPEAN_PUT:
             exercise_type = FinExerciseTypes.EUROPEAN
 
         # This is wasteful if model is Jamshidian but how to do neat design
-        model.build_tree(tmat, df_times, df_values)
+        model.build_tree(t_mat, df_times, df_values)
 
-        v = model.bond_option(texp, self._strike_price, self._face_amount,
-                              coupon_times, coupon_flows, exercise_type)
+        v = model.bond_option(t_exp, self.strike_price, self.par,
+                              cpn_times, cpn_flows, exercise_type)
 
-        if self._option_type == OptionTypes.EUROPEAN_CALL \
-                or self._option_type == OptionTypes.AMERICAN_CALL:
+        if self.option_type == OptionTypes.EUROPEAN_CALL \
+                or self.option_type == OptionTypes.AMERICAN_CALL:
             return v['call']
-        elif self._option_type == OptionTypes.EUROPEAN_PUT \
-                or self._option_type == OptionTypes.AMERICAN_PUT:
+        elif self.option_type == OptionTypes.EUROPEAN_PUT \
+                or self.option_type == OptionTypes.AMERICAN_PUT:
             return v['put']
         else:
-            print(self._option_type)
+            print(self.option_type)
             raise FinError("Unknown option type.")
 
 ###############################################################################
 
     def __repr__(self):
         s = label_to_string("OBJECT TYPE", type(self).__name__)
-        s += label_to_string("EXPIRY DATE", self._expiry_date)
-        s += label_to_string("STRIKE", self._strike_price)
-        s += label_to_string("OPTION TYPE", self._option_type)
-        s += label_to_string("FACE AMOUNT", self._face_amount, "")
+        s += label_to_string("EXPIRY DATE", self.expiry_dt)
+        s += label_to_string("STRIKE", self.strike_price)
+        s += label_to_string("OPTION TYPE", self.option_type)
         s += "Underlying Bond\n"
-        s += str(self._bond)
+        s += str(self.bond)
         return s
 
 ###############################################################################

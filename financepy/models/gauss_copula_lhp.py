@@ -18,7 +18,7 @@ from ..utils.error import FinError
 def tr_surv_prob_lhp(k1,
                      k2,
                      num_credits,
-                     survival_probabilities,
+                     survival_probs,
                      recovery_rates,
                      beta):
     """ Get the approximated tranche survival probability of a portfolio of
@@ -33,19 +33,19 @@ def tr_surv_prob_lhp(k1,
         raise FinError("K1 >= K2")
 
     p = 0.0
-    portfolioEL = 0.0
-    for iCredit in range(0, num_credits):
-        pd = (1.0 - survival_probabilities[iCredit])
+    portfolio_el = 0.0
+    for i_credit in range(0, num_credits):
+        pd = (1.0 - survival_probs[i_credit])
         p += pd
-        portfolioEL += pd * (1.0 - recovery_rates[iCredit])
+        portfolio_el += pd * (1.0 - recovery_rates[i_credit])
 
     if p == 0.0:
         return 1.0
 
     p = p / num_credits
-    portfolioEL = portfolioEL / num_credits
+    portfolio_el = portfolio_el / num_credits
 
-    recovery = 1.0 - portfolioEL / p
+    recovery = 1.0 - portfolio_el / p
     elk1 = exp_min_lk(k1, p, recovery, 1.0, beta)
     elk2 = exp_min_lk(k2, p, recovery, 1.0, beta)
     value = 1.0 - (elk2 - elk1) / (k2 - k1)
@@ -55,22 +55,23 @@ def tr_surv_prob_lhp(k1,
 
 
 @njit(fastmath=True, cache=True)
-def portfolio_cdf_lhp(k, num_credits, qvector, recovery_rates, beta, num_points):
+def portfolio_cdf_lhp(k, num_credits, qvector, recovery_rates,
+                      beta, num_points):
 
     p = 0.0
-    portfolioEL = 0.0
+    portfolio_el = 0.0
 
     for j in range(0, num_credits):
         p += (1.0 - qvector[j])
-        portfolioEL += (1.0 - recovery_rates[j]) * (1 - qvector[j])
+        portfolio_el += (1.0 - recovery_rates[j]) * (1 - qvector[j])
 
     p = p / num_credits
-    portfolioEL /= num_credits
+    portfolio_el /= num_credits
 
     if p == 0:
         return 0.0
 
-    recovery = 1.0 - portfolioEL / p
+    recovery = 1.0 - portfolio_el / p
 
     if beta == 0:
         beta = 0.0000000001

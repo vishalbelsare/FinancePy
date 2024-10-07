@@ -3,11 +3,14 @@
 ##############################################################################
 
 import sys
+from typing import Union
+
 import numpy as np
 from numba import njit, float64
-from typing import Union
+from prettytable import PrettyTable
+
 from .date import Date
-from .global_vars import gDaysInYear, gSmall
+from .global_vars import g_days_in_year, g_small
 from .error import FinError
 from .day_count import DayCountTypes, DayCount
 
@@ -24,12 +27,12 @@ def _func_name():
 ###############################################################################
 
 
-def grid_index(t, gridTimes):
-    n = len(gridTimes)
+def grid_index(t, grid_times):
+    n = len(grid_times)
     for i in range(0, n):
-        gridTime = gridTimes[i]
-        if abs(gridTime - t) < gSmall:
-            print(t, gridTimes, i)
+        grid_time = grid_times[i]
+        if abs(grid_time - t) < g_small:
+            print(t, grid_times, i)
             return i
 
     raise FinError("Grid index not found")
@@ -64,59 +67,62 @@ def pv01_times(t: float,
     with the first coupon date. """
 
     dt = 1.0 / f
-    pv01Times = []
+    ptimes = []
 
     while t >= 0.0:
-        pv01Times.append(t)
+        ptimes.append(t)
         t -= dt
 
-    return pv01Times
+    return ptimes
 
 
 ###############################################################################
 
 
 def times_from_dates(dt: (Date, list),
-                     valuation_date: Date,
+                     value_dt: Date,
                      day_count_type: DayCountTypes = None):
     """ If a single date is passed in then return the year from valuation date
     but if a whole vector of dates is passed in then convert to a vector of
     times from the valuation date. The output is always a numpy vector of times
     which has only one element if the input is only one date. """
 
-    if isinstance(valuation_date, Date) is False:
+    if isinstance(value_dt, Date) is False:
         raise FinError("Valuation date is not a Date")
 
     if day_count_type is None:
-        dcCounter = None
+        dc_counter = None
     else:
-        dcCounter = DayCount(day_count_type)
+        dc_counter = DayCount(day_count_type)
 
     if isinstance(dt, Date):
-        num_dates = 1
+        num_dts = 1
         times = [None]
-        if dcCounter is None:
-            times[0] = (dt - valuation_date) / gDaysInYear
+        if dc_counter is None:
+            times[0] = (dt - value_dt) / g_days_in_year
         else:
-            times[0] = dcCounter.year_frac(valuation_date, dt)[0]
+            times[0] = dc_counter.year_frac(value_dt, dt)[0]
 
         return times[0]
 
     elif isinstance(dt, list) and isinstance(dt[0], Date):
-        num_dates = len(dt)
+        num_dts = len(dt)
         times = []
-        for i in range(0, num_dates):
-            if dcCounter is None:
-                t = (dt[i] - valuation_date) / gDaysInYear
+        for i in range(0, num_dts):
+            if dc_counter is None:
+                t = (dt[i] - value_dt) / g_days_in_year
             else:
-                t = dcCounter.year_frac(valuation_date, dt[i])[0]
+                t = dc_counter.year_frac(value_dt, dt[i])[0]
             times.append(t)
 
         return np.array(times)
 
     elif isinstance(dt, np.ndarray):
+
         raise FinError("You passed an ndarray instead of dates.")
+
     else:
+
         raise FinError("Discount factor must take dates.")
 
     return None
@@ -144,7 +150,7 @@ def check_vector_differences(x: np.ndarray,
 ###############################################################################
 
 
-def check_date(d: Date):
+def check_dt(d: Date):
     """ Check that input d is a Date. """
 
     if isinstance(d, Date) is False:
@@ -219,7 +225,7 @@ def input_time(dt: Date,
     def check(t):
         if t < 0.0:
             raise FinError("Date " + str(dt) +
-                           " is before curve date " + str(curve._curve_date))
+                           " is before curve date " + str(curve._curve_dt))
         elif t < small:
             t = small
         return t
@@ -228,7 +234,7 @@ def input_time(dt: Date,
         t = dt
         return check(t)
     elif isinstance(dt, Date):
-        t = (dt - curve._valuation_date) / gDaysInYear
+        t = (dt - curve.value_dt) / g_days_in_year
         return check(t)
     elif isinstance(dt, np.ndarray):
         t = dt
@@ -262,16 +268,15 @@ def listdiff(a: np.ndarray,
 
 
 @njit(fastmath=True, cache=True)
-def dotproduct(xVector: np.ndarray,
-               yVector: np.ndarray):
+def dotproduct(x_vector: np.ndarray,
+               y_vector: np.ndarray):
     """ Fast calculation of dot product using Numba. """
 
     dotprod = 0.0
-    n = len(xVector)
+    n = len(x_vector)
     for i in range(0, n):
-        dotprod += xVector[i] * yVector[i]
+        dotprod += x_vector[i] * y_vector[i]
     return dotprod
-
 
 ###############################################################################
 
@@ -293,16 +298,16 @@ def frange(start: int,
 
 
 @njit(fastmath=True, cache=True)
-def normalise_weights(wtVector: np.ndarray):
+def normalise_weights(wt_vector: np.ndarray):
     """ Normalise a vector of weights so that they sum up to 1.0. """
 
-    n = len(wtVector)
-    sumWts = 0.0
+    n = len(wt_vector)
+    sum_wts = 0.0
     for i in range(0, n):
-        sumWts += wtVector[i]
+        sum_wts += wt_vector[i]
     for i in range(0, n):
-        wtVector[i] = wtVector[i] / sumWts
-    return wtVector
+        wt_vector[i] = wt_vector[i] / sum_wts
+    return wt_vector
 
 
 ###############################################################################
@@ -311,7 +316,7 @@ def normalise_weights(wtVector: np.ndarray):
 def label_to_string(label: str,
                     value: (float, str),
                     separator: str = "\n",
-                    listFormat: bool = False):
+                    list_format: bool = False):
     """ Format label/value pairs for a unified formatting. """
     # Format option for lists such that all values are aligned:
     # Label: value1
@@ -319,44 +324,67 @@ def label_to_string(label: str,
     #        ...
     label = str(label)
 
-    if listFormat and type(value) is list and len(value) > 0:
+    if list_format and isinstance(value, list) and len(value) > 0:
         s = label + ": "
-        labelSpacing = " " * len(s)
+        label_spacing = " " * len(s)
         s += str(value[0])
 
         for v in value[1:]:
-            s += "\n" + labelSpacing + str(v)
+            s += "\n" + label_spacing + str(v)
         s += separator
 
         return s
-    else:
-        return f"{label}: {value}{separator}"
+
+    return f"{label}: {value}{separator}"
 
 ###############################################################################
 
 
 def table_to_string(header: str,
-                    valueTable,
-                    floatPrecision="10.7f"):
+                    value_table,
+                    float_precision="10.7f"):
     """ Format a 2D array into a table-like string. """
-    if (len(valueTable) == 0 or type(valueTable) is not list):
-        print(len(valueTable))
+    if (len(value_table) == 0 or type(value_table) is not list):
+        print(len(value_table))
         return ""
 
-    numRows = len(valueTable[0])
+    num_rows = len(value_table[0])
 
     s = header + "\n"
-    for i in range(numRows):
-        for vList in valueTable:
+    for i in range(num_rows):
+        for v_list in value_table:
             # isinstance is needed instead of type in case of pandas floats
-            if (isinstance(vList[i], float)):
-                s += format(vList[i], floatPrecision) + ", "
+            if isinstance(v_list[i], float):
+                s += format(v_list[i], float_precision) + ", "
             else:
-                s += str(vList[i]) + ", "
+                s += str(v_list[i]) + ", "
         s = s[:-2] + "\n"
 
     return s[:-1]
 
+###############################################################################
+
+
+def format_table(header: (list, tuple),
+                 rows: (list, tuple)):
+    """ Format a 2D array into a table-like string.
+    Similar to "table_to_string", but using a wrapper
+    around PrettyTable to get a nice formatting. """
+
+    t = PrettyTable(header)
+    num_rows = len(header)
+
+    if len(rows) == 0:
+        print(len(rows))
+        return ""
+
+    for row in rows:
+        if len(row) != num_rows:
+            raise ValueError("Header and Row Size must match!")
+
+        t.add_row(row)
+
+    return t
 
 ###############################################################################
 
@@ -424,43 +452,43 @@ def uniform_to_default_time(u, t, v):
 # THIS IS NOT USED
 
 @njit(fastmath=True, cache=True)
-def accrued_tree(gridTimes: np.ndarray,
-                 gridFlows: np.ndarray,
+def accrued_tree(grid_times: np.ndarray,
+                 grid_flows: np.ndarray,
                  face: float):
     """ Fast calulation of accrued interest using an Actual/Actual type of
     convention. This does not calculate according to other conventions. """
 
-    numGridTimes = len(gridTimes)
+    numgrid_times = len(grid_times)
 
-    if len(gridFlows) != numGridTimes:
+    if len(grid_flows) != numgrid_times:
         raise FinError("Grid flows not same size as grid times.")
 
-    accrued = np.zeros(numGridTimes)
+    accrued = np.zeros(numgrid_times)
 
     # When the grid time is before the first coupon we have to extrapolate back
 
-    coupon_times = np.zeros(0)
-    coupon_flows = np.zeros(0)
+    cpn_times = np.zeros(0)
+    cpn_flows = np.zeros(0)
 
-    for iGrid in range(1, numGridTimes):
+    for i_grid in range(1, numgrid_times):
 
-        cpn_time = gridTimes[iGrid]
-        cpn_flow = gridFlows[iGrid]
+        cpn_time = grid_times[i_grid]
+        cpn_flow = grid_flows[i_grid]
 
-        if gridFlows[iGrid] > gSmall:
-            coupon_times = np.append(coupon_times, cpn_time)
-            coupon_flows = np.append(coupon_flows, cpn_flow)
+        if grid_flows[i_grid] > g_small:
+            cpn_times = np.append(cpn_times, cpn_time)
+            cpn_flows = np.append(cpn_flows, cpn_flow)
 
-    num_coupons = len(coupon_times)
+    num_cpns = len(cpn_times)
 
     # interpolate between coupons
-    for iGrid in range(0, numGridTimes):
-        t = gridTimes[iGrid]
-        for i in range(0, num_coupons):
-            if t > coupon_times[i - 1] and t <= coupon_times[i]:
-                den = coupon_times[i] - coupon_times[i - 1]
-                num = (t - coupon_times[i - 1])
-                accrued[iGrid] = face * num * coupon_flows[i] / den
+    for i_grid in range(0, numgrid_times):
+        t = grid_times[i_grid]
+        for i in range(0, num_cpns):
+            if t > cpn_times[i - 1] and t <= cpn_times[i]:
+                den = cpn_times[i] - cpn_times[i - 1]
+                num = t - cpn_times[i - 1]
+                accrued[i_grid] = face * num * cpn_flows[i] / den
                 break
 
     return accrued
@@ -473,20 +501,20 @@ def check_argument_types(func, values):
     """ Check that all values passed into a function are of the same type
     as the function annotations. If a value has not been annotated, it
     will not be checked. """
-    for valueName, annotationType in func.__annotations__.items():
-        value = values[valueName]
-        usableType = to_usable_type(annotationType)
-        if (not isinstance(value, usableType)):
+    for value_name, annotation_type in func.__annotations__.items():
+
+        if value_name in values:
+            value = values[value_name]
+            usable_type = to_usable_type(annotation_type)
+
+        if not isinstance(value, usable_type):
+
             print("ERROR with function arguments for", func.__name__)
             print("This is in module", func.__module__)
-            print("Please check inputs for argument >>", valueName, "<<")
+            print("Please check inputs for argument >>", value_name, "<<")
             print("You have input an argument", value, "of type", type(value))
-            print("The allowed types are", usableType)
+            print("The allowed types are", usable_type)
             print("It is none of these so FAILS. Please amend.")
-            #            s = f"In {func.__module__}.{func.__name__}:\n"
-            #            s += f"Mismatched Types: expected a "
-            #            s += f"{valueName} of type '{usableType.__name__}', however"
-            #            s += f" a value of type '{type(value).__name__}' was given."
             raise FinError("Argument Type Error")
 
 ###############################################################################

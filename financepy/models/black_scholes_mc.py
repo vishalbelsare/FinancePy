@@ -15,17 +15,18 @@ from math import exp
 
 ###############################################################################
 
-def _value_mc_nonumba_nonumpy(s, t, K, option_type, r, q, v, num_paths, seed, useSobol):
+def _value_mc_nonumba_nonumpy(s, t, K, option_type, r, q, v,
+                              num_paths, seed, use_sobol):
     # SLOWEST - No use of NUMPY vectorisation or NUMBA
 
     num_paths = int(num_paths)
     np.random.seed(seed)
     mu = r - q
     v2 = v ** 2
-    vsqrtt = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
     payoff = 0.0
 
-    if useSobol == 1:
+    if use_sobol == 1:
         g = get_gaussian_sobol(num_paths, 1)[:, 0]
     else:
         g = np.random.standard_normal(num_paths)
@@ -35,16 +36,16 @@ def _value_mc_nonumba_nonumpy(s, t, K, option_type, r, q, v, num_paths, seed, us
     if option_type == OptionTypes.EUROPEAN_CALL.value:
 
         for i in range(0, num_paths):
-            s_1 = ss * exp(+g[i] * vsqrtt)
-            s_2 = ss * exp(-g[i] * vsqrtt)
+            s_1 = ss * exp(+g[i] * v_sqrt_t)
+            s_2 = ss * exp(-g[i] * v_sqrt_t)
             payoff += max(s_1 - K, 0.0)
             payoff += max(s_2 - K, 0.0)
 
     elif option_type == OptionTypes.EUROPEAN_PUT.value:
 
         for i in range(0, num_paths):
-            s_1 = ss * exp(+g[i] * vsqrtt)
-            s_2 = ss * exp(-g[i] * vsqrtt)
+            s_1 = ss * exp(+g[i] * v_sqrt_t)
+            s_2 = ss * exp(-g[i] * v_sqrt_t)
             payoff += max(K - s_1, 0.0)
             payoff += max(K - s_2, 0.0)
 
@@ -57,22 +58,23 @@ def _value_mc_nonumba_nonumpy(s, t, K, option_type, r, q, v, num_paths, seed, us
 
 ###############################################################################
 
-def _value_mc_numpy_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobol):
+def _value_mc_numpy_only(s, t, K, option_type, r, q, v, num_paths,
+                         seed, use_sobol):
     # Use of NUMPY ONLY
 
     num_paths = int(num_paths)
     np.random.seed(seed)
     mu = r - q
     v2 = v ** 2
-    vsqrtt = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
 
-    if useSobol == 1:
+    if use_sobol == 1:
         g = get_gaussian_sobol(num_paths, 1)[:, 0]
     else:
         g = np.random.standard_normal(num_paths)
 
     ss = s * np.exp((mu - v2 / 2.0) * t)
-    m = np.exp(g * vsqrtt)
+    m = np.exp(g * v_sqrt_t)
     s_1 = ss * m
     s_2 = ss / m
 
@@ -95,22 +97,23 @@ def _value_mc_numpy_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobo
 
 @njit(float64(float64, float64, float64, int64, float64, float64, float64,
               int64, int64, int64), cache=True, fastmath=True)
-def _value_mc_numpy_numba(s, t, K, option_type, r, q, v, num_paths, seed, useSobol):
+def _value_mc_numpy_numba(s, t, K, option_type, r, q, v, num_paths, seed,
+                          use_sobol):
     # Use of NUMPY ONLY
 
     num_paths = int(num_paths)
     np.random.seed(seed)
     mu = r - q
     v2 = v ** 2
-    vsqrtt = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
 
-    if useSobol == 1:
+    if use_sobol == 1:
         g = get_gaussian_sobol(num_paths, 1)[:, 0]
     else:
         g = np.random.standard_normal(num_paths)
 
     ss = s * np.exp((mu - v2 / 2.0) * t)
-    m = np.exp(g * vsqrtt)
+    m = np.exp(g * v_sqrt_t)
     s_1 = ss * m
     s_2 = ss / m
 
@@ -133,17 +136,18 @@ def _value_mc_numpy_numba(s, t, K, option_type, r, q, v, num_paths, seed, useSob
 
 @njit(float64(float64, float64, float64, int64, float64, float64, float64,
               int64, int64, int64), fastmath=True, cache=True)
-def _value_mc_numba_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobol):
+def _value_mc_numba_only(s, t, K, option_type, r, q, v, num_paths, seed,
+                         use_sobol):
     # No use of Numpy vectorisation but NUMBA
 
     num_paths = int(num_paths)
     np.random.seed(seed)
     mu = r - q
     v2 = v ** 2
-    vsqrtt = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
     payoff = 0.0
 
-    if useSobol == 1:
+    if use_sobol == 1:
         g = get_gaussian_sobol(num_paths, 1)[:, 0]
     else:
         g = np.random.standard_normal(num_paths)
@@ -154,8 +158,8 @@ def _value_mc_numba_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobo
 
         for i in range(0, num_paths):
             gg = g[i]
-            s_1 = ss * np.exp(+gg * vsqrtt)
-            s_2 = ss * np.exp(-gg * vsqrtt)
+            s_1 = ss * np.exp(+gg * v_sqrt_t)
+            s_2 = ss * np.exp(-gg * v_sqrt_t)
             payoff += max(s_1 - K, 0.0)
             payoff += max(s_2 - K, 0.0)
 
@@ -163,8 +167,8 @@ def _value_mc_numba_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobo
 
         for i in range(0, num_paths):
             gg = g[i]
-            s_1 = ss * np.exp(+gg * vsqrtt)
-            s_2 = ss * np.exp(-gg * vsqrtt)
+            s_1 = ss * np.exp(+gg * v_sqrt_t)
+            s_2 = ss * np.exp(-gg * v_sqrt_t)
             payoff += max(K - s_1, 0.0)
             payoff += max(K - s_2, 0.0)
 
@@ -180,16 +184,17 @@ def _value_mc_numba_only(s, t, K, option_type, r, q, v, num_paths, seed, useSobo
 
 @njit(float64(float64, float64, float64, int64, float64, float64, float64,
               int64, int64, int64), fastmath=True, cache=True)
-def _value_mc_numba_parallel(s, t, K, option_type, r, q, v, num_paths, seed, useSobol):
+def _value_mc_numba_parallel(s, t, K, option_type, r, q, v, num_paths, seed,
+                             use_sobol):
     # No use of Numpy vectorisation but NUMBA
 
     num_paths = int(num_paths)
     np.random.seed(seed)
     mu = r - q
     v2 = v ** 2
-    vsqrtt = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
 
-    if useSobol == 1:
+    if use_sobol == 1:
         g = get_gaussian_sobol(num_paths, 1)[:, 0]
     else:
         g = np.random.standard_normal(num_paths)
@@ -202,16 +207,16 @@ def _value_mc_numba_parallel(s, t, K, option_type, r, q, v, num_paths, seed, use
     if option_type == OptionTypes.EUROPEAN_CALL.value:
 
         for i in range(0, num_paths):
-            s_1 = ss * exp(+g[i] * vsqrtt)
-            s_2 = ss * exp(-g[i] * vsqrtt)
+            s_1 = ss * exp(+g[i] * v_sqrt_t)
+            s_2 = ss * exp(-g[i] * v_sqrt_t)
             payoff1 += max(s_1 - K, 0.0)
             payoff2 += max(s_2 - K, 0.0)
 
     elif option_type == OptionTypes.EUROPEAN_PUT.value:
 
         for i in range(0, num_paths):
-            s_1 = ss * exp(+g[i] * vsqrtt)
-            s_2 = ss * exp(-g[i] * vsqrtt)
+            s_1 = ss * exp(+g[i] * v_sqrt_t)
+            s_2 = ss * exp(-g[i] * v_sqrt_t)
             payoff1 += max(K - s_1, 0.0)
             payoff2 += max(K - s_2, 0.0)
 

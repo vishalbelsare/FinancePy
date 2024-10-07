@@ -2,8 +2,10 @@
 # Copyright (C) 2018, 2019, 2020 Dominic O'Kane
 ##############################################################################
 
+from enum import Enum
+
 import numpy as np
-from numba import njit, float64, jit
+from numba import njit, float64
 
 from ..utils.math import N
 from ..utils.error import FinError
@@ -12,10 +14,7 @@ from ..utils.error import FinError
 # Parametric functions for option volatility to use in a Black-Scholes model
 ###############################################################################
 
-from enum import Enum
-
-
-class VolFunctionTypes(Enum):
+class VolFuncTypes(Enum):
     CLARK = 0
     SABR = 1
     SABR_BETA_ONE = 2
@@ -97,12 +96,12 @@ def vol_function_bloomberg(params, f, k, t):
 @njit(float64(float64[:], float64, float64, float64),
       fastmath=True, cache=True)
 def vol_function_svi(params, f, k, t):
-    """ Volatility Function proposed by Gatheral in 2004. Increasing a results 
-    in a vertical translation of the smile in the positive direction. 
-    Increasing b decreases the angle between the put and call wing, i.e. 
+    """ Volatility Function proposed by Gatheral in 2004. Increasing a results
+    in a vertical translation of the smile in the positive direction.
+    Increasing b decreases the angle between the put and call wing, i.e.
     tightens the smile. Increasing rho results in a counter-clockwise rotation
-    of the smile. Increasing m results in a horizontal translation of the smile 
-    in the positive direction. Increasing sigma reduces the at-the-money 
+    of the smile. Increasing m results in a horizontal translation of the smile
+    in the positive direction. Increasing sigma reduces the at-the-money
     curvature of the smile. """
 
     x = np.log(f/k)
@@ -242,9 +241,7 @@ def vol_function_ssvi(params, f, k, t):
     x = np.log(f/k)
 
     vart = ssvi_local_varg(x, gamma, sigma, rho, t)
-
-    if vart < 0.0:
-        vart = 0.0
+    vart = max(vart, 0.0);
 
     sigma = np.sqrt(vart)
 

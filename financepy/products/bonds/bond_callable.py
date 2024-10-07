@@ -2,7 +2,12 @@
 # Copyright (C) 2018, 2019, 2020 Dominic O'Kane
 ##############################################################################
 
-from ...utils.global_vars import gDaysInYear
+from enum import Enum
+
+from typing import List
+import numpy as np
+
+from ...utils.global_vars import g_days_in_year
 from ...models.hw_tree import HWTree
 from ...models.bk_tree import BKTree
 from ...utils.error import FinError
@@ -13,10 +18,6 @@ from ...products.bonds.bond import Bond
 from ...utils.date import Date
 from ...utils.helpers import label_to_string, check_argument_types
 from ...market.curves.discount_curve import DiscountCurve
-
-from enum import Enum
-import numpy as np
-from typing import List
 
 
 ###############################################################################
@@ -29,6 +30,7 @@ class BondModelTypes(Enum):
     HO_LEE = 2
     HULL_WHITE = 3
     BLACK_KARASINSKI = 4
+
 
 ###############################################################################
 
@@ -44,61 +46,61 @@ class BondOptionTypes(Enum):
 
 
 class BondEmbeddedOption:
-    """ Class for fixed coupon bonds with embedded call or put optionality. """
+    """Class for fixed coupon bonds with embedded call or put optionality."""
 
-    def __init__(self,
-                 issue_date: Date,
-                 maturity_date: Date,  # Date
-                 coupon: float,  # Annualised coupon - 0.03 = 3.00%
-                 freq_type: FrequencyTypes,
-                 accrual_type: DayCountTypes,
-                 call_dates: List[Date],
-                 call_prices: List[float],
-                 put_dates: List[Date],
-                 put_prices: List[float],
-                 face_amount: float = 100.0):
-        """ Create a BondEmbeddedOption object with a maturity date, coupon
-        and all of the bond inputs. """
+    def __init__(
+        self,
+        issue_dt: Date,
+        maturity_dt: Date,  # Date
+        coupon: float,  # Annualised coupon - 0.03 = 3.00%
+        freq_type: FrequencyTypes,
+        dc_type: DayCountTypes,
+        call_dts: List[Date],
+        call_prices: List[float],
+        put_dts: List[Date],
+        put_prices: List[float],
+    ):
+        """Create a BondEmbeddedOption object with a maturity date, coupon
+        and all the bond inputs."""
 
         check_argument_types(self.__init__, locals())
 
-        self._issue_date = issue_date
-        self._maturity_date = maturity_date
-        self._coupon = coupon
-        self._freq_type = freq_type
-        self._accrual_type = accrual_type
+        self.issue_dt = issue_dt
+        self.maturity_dt = maturity_dt
+        self.cpn = coupon
+        self.freq_type = freq_type
+        self.dc_type = dc_type
 
-        self._bond = Bond(issue_date,
-                          maturity_date,
-                          coupon,
-                          freq_type,
-                          accrual_type,
-                          face_amount)
+        self.ex_div_days = 0
+
+        self.bond = Bond(
+            issue_dt, maturity_dt, coupon, freq_type, dc_type, self.ex_div_days
+        )
 
         # Validate call and put schedules
-        for dt in call_dates:
-            if dt > self._maturity_date:
+        for dt in call_dts:
+            if dt > self.maturity_dt:
                 raise FinError("Call date after bond maturity date")
 
-        if len(call_dates) > 0:
-            dtprev = call_dates[0]
-            for dt in call_dates[1:]:
-                if dt <= dtprev:
+        if len(call_dts) > 0:
+            dt_prev = call_dts[0]
+            for dt in call_dts[1:]:
+                if dt <= dt_prev:
                     raise FinError("Call dates not increasing")
                 else:
-                    dtprev = dt
+                    dt_prev = dt
 
-        for dt in put_dates:
-            if dt > self._maturity_date:
+        for dt in put_dts:
+            if dt > self.maturity_dt:
                 raise FinError("Put date after bond maturity date")
 
-        if len(put_dates) > 0:
-            dtprev = put_dates[0]
-            for dt in put_dates[1:]:
-                if dt <= dtprev:
+        if len(put_dts) > 0:
+            dt_prev = put_dts[0]
+            for dt in put_dts[1:]:
+                if dt <= dt_prev:
                     raise FinError("Put dates not increasing")
                 else:
-                    dtprev = dt
+                    dt_prev = dt
 
         for px in call_prices:
             if px < 0.0:
@@ -108,37 +110,35 @@ class BondEmbeddedOption:
             if px < 0.0:
                 raise FinError("Put price must be positive.")
 
-        if len(call_dates) != len(call_prices):
+        if len(call_dts) != len(call_prices):
             raise FinError("Number of call dates and call prices not the same")
 
-        if len(put_dates) != len(put_prices):
+        if len(put_dts) != len(put_prices):
             raise FinError("Number of put dates and put prices not the same")
 
-        self._call_dates = call_dates
-        self._call_prices = call_prices
-        self._put_dates = put_dates
-        self._put_prices = put_prices
-        self._face_amount = face_amount
-        self._bond._calculate_coupon_dates()
+        self.call_dts = call_dts
+        self.call_prices = call_prices
+        self.put_dts = put_dts
+        self.put_prices = put_prices
+        self.par = 100.0
+        self.bond._calculate_cpn_dts()
 
-###############################################################################
+    ###############################################################################
 
-    def value(self,
-              settlement_date: Date,
-              discount_curve: DiscountCurve,
-              model):
-        """ Value the bond that settles on the specified date that can have
+    def value(self, settle_dt: Date, discount_curve: DiscountCurve, model):
+        """Value the bond that settles on the specified date that can have
         both embedded call and put options. This is done using the specified
-        model and a discount curve. """
+        model and a discount curve."""
 
         # Generate bond coupon flow schedule
-        cpn = self._bond._coupon/self._bond._frequency
+        cpn = self.bond.cpn / self.bond.freq
+
         cpn_times = []
         cpn_amounts = []
 
-        for flow_date in self._bond._coupon_dates[1:]:
-            if flow_date > settlement_date:
-                cpn_time = (flow_date - settlement_date) / gDaysInYear
+        for flow_dt in self.bond.cpn_dts[1:]:
+            if flow_dt > settle_dt:
+                cpn_time = (flow_dt - settle_dt) / g_days_in_year
                 cpn_times.append(cpn_time)
                 cpn_amounts.append(cpn)
 
@@ -147,102 +147,134 @@ class BondEmbeddedOption:
 
         # Generate bond call times and prices
         call_times = []
-        for dt in self._call_dates:
-            if dt > settlement_date:
-                call_time = (dt - settlement_date) / gDaysInYear
+        for dt in self.call_dts:
+            if dt > settle_dt:
+                call_time = (dt - settle_dt) / g_days_in_year
                 call_times.append(call_time)
         call_times = np.array(call_times)
-        call_prices = np.array(self._call_prices)
+        call_prices = np.array(self.call_prices)
 
         # Generate bond put times and prices
         put_times = []
-        for dt in self._put_dates:
-            if dt > settlement_date:
-                put_time = (dt - settlement_date) / gDaysInYear
+        for dt in self.put_dts:
+            if dt > settle_dt:
+                put_time = (dt - settle_dt) / g_days_in_year
                 put_times.append(put_time)
         put_times = np.array(put_times)
-        put_prices = np.array(self._put_prices)
+        put_prices = np.array(self.put_prices)
 
-        maturity_date = self._bond._maturity_date
-        tmat = (maturity_date - settlement_date) / gDaysInYear
+        maturity_dt = self.bond.maturity_dt
+        t_mat = (maturity_dt - settle_dt) / g_days_in_year
         df_times = discount_curve._times
         df_values = discount_curve._dfs
 
-        face_amount = self._bond._face_amount
+        face_amount = self.par
 
         if isinstance(model, HWTree):
 
-            """ We need to build the tree out to the bond maturity date. To be
+            """We need to build the tree out to the bond maturity date. To be
             more precise we only need to go out the the last option date but
-            we can do that refinement at a later date. """
+            we can do that refinement at a later date."""
 
-            model.build_tree(tmat, df_times, df_values)
-            v1 = model.callable_puttable_bond_tree(cpn_times, cpn_amounts,
-                                                   call_times, call_prices,
-                                                   put_times, put_prices,
-                                                   face_amount)
-            model._num_time_steps += 1
-            model.build_tree(tmat, df_times, df_values)
-            v2 = model.callable_puttable_bond_tree(cpn_times, cpn_amounts,
-                                                   call_times, call_prices,
-                                                   put_times, put_prices,
-                                                   face_amount)
-            model._num_time_steps -= 1
+            model.build_tree(t_mat, df_times, df_values)
+            v1 = model.callable_puttable_bond_tree(
+                cpn_times,
+                cpn_amounts,
+                call_times,
+                call_prices,
+                put_times,
+                put_prices,
+                face_amount,
+            )
+            model.num_time_steps += 1
+            model.build_tree(t_mat, df_times, df_values)
+            v2 = model.callable_puttable_bond_tree(
+                cpn_times,
+                cpn_amounts,
+                call_times,
+                call_prices,
+                put_times,
+                put_prices,
+                face_amount,
+            )
+            model.num_time_steps -= 1
 
-            v_bondwithoption = (v1['bondwithoption'] + v2['bondwithoption'])/2
-            v_bondpure = (v1['bondpure'] + v2['bondpure'])/2
+            v_bond_with_option = (
+                v1["bondwithoption"] + v2["bondwithoption"]
+            ) / 2
+            v_bond_pure = (v1["bondpure"] + v2["bondpure"]) / 2
 
-            return {'bondwithoption': v_bondwithoption, 'bondpure': v_bondpure}
+            return {
+                "bondwithoption": v_bond_with_option,
+                "bondpure": v_bond_pure,
+            }
 
         elif isinstance(model, BKTree):
 
-            """ Because we not have a closed form bond price we need to build
-            the tree out to the bond maturity which is after option expiry. """
+            """Because we not have a closed form bond price we need to build
+            the tree out to the bond maturity which is after option expiry."""
 
-            model.build_tree(tmat, df_times, df_values)
-            v1 = model.callable_puttable_bond_tree(cpn_times, cpn_amounts,
-                                                   call_times, call_prices,
-                                                   put_times, put_prices,
-                                                   face_amount)
-            model._num_time_steps += 1
-            model.build_tree(tmat, df_times, df_values)
-            v2 = model.callable_puttable_bond_tree(cpn_times, cpn_amounts,
-                                                   call_times, call_prices,
-                                                   put_times, put_prices,
-                                                   face_amount)
-            model._num_time_steps -= 1
+            model.build_tree(t_mat, df_times, df_values)
+            v1 = model.callable_puttable_bond_tree(
+                cpn_times,
+                cpn_amounts,
+                call_times,
+                call_prices,
+                put_times,
+                put_prices,
+                face_amount,
+            )
+            model.num_time_steps += 1
+            model.build_tree(t_mat, df_times, df_values)
+            v2 = model.callable_puttable_bond_tree(
+                cpn_times,
+                cpn_amounts,
+                call_times,
+                call_prices,
+                put_times,
+                put_prices,
+                face_amount,
+            )
+            model.num_time_steps -= 1
 
-            v_bondwithoption = (v1['bondwithoption'] + v2['bondwithoption'])/2
-            v_bondpure = (v1['bondpure'] + v2['bondpure'])/2
+            v_bond_with_option = (
+                v1["bondwithoption"] + v2["bondwithoption"]
+            ) / 2
+            v_bond_pure = (v1["bondpure"] + v2["bondpure"]) / 2
 
-            return {'bondwithoption': v_bondwithoption, 'bondpure': v_bondpure}
+            return {
+                "bondwithoption": v_bond_with_option,
+                "bondpure": v_bond_pure,
+            }
         else:
             raise FinError("Unknown model type")
 
-###############################################################################
+    ###############################################################################
 
     def __repr__(self):
+
         s = label_to_string("OBJECT TYPE", type(self).__name__)
-        s += label_to_string("ISSUE DATE", self._issue_date)
-        s += label_to_string("MATURITY DATE", self._maturity_date)
-        s += label_to_string("COUPON", self._coupon)
-        s += label_to_string("FREQUENCY", self._freq_type)
-        s += label_to_string("ACCRUAL TYPE", self._accrual_type)
-        s += label_to_string("FACE AMOUNT", self._face_amount)
+        s += label_to_string("ISSUE DATE", self.issue_dt)
+        s += label_to_string("MATURITY DATE", self.maturity_dt)
+        s += label_to_string("COUPON", self.cpn)
+        s += label_to_string("FREQUENCY", self.freq_type)
+        s += label_to_string("DAY COUNT TYPE", self.dc_type)
+        s += label_to_string("EX-DIV DAYS", self.ex_div_days)
 
-        s += label_to_string("NUM CALL DATES", len(self._call_dates))
-        for i in range(0, len(self._call_dates)):
-            s += "%12s %12.6f\n" % (self._call_dates[i], self._call_prices[i])
+        s += label_to_string("NUM CALL DATES", len(self.call_dts))
+        for i in range(0, len(self.call_dts)):
+            s += "%12s %12.6f\n" % (self.call_dts[i], self.call_prices[i])
 
-        s += label_to_string("NUM PUT DATES", len(self._put_dates))
-        for i in range(0, len(self._put_dates)):
-            s += "%12s %12.6f\n" % (self._put_dates[i], self._put_prices[i])
+        s += label_to_string("NUM PUT DATES", len(self.put_dts))
+        for i in range(0, len(self.put_dts)):
+            s += "%12s %12.6f\n" % (self.put_dts[i], self.put_prices[i])
 
         return s
 
-###############################################################################
+    ###############################################################################
 
     def _print(self):
         print(self)
+
 
 ###############################################################################

@@ -12,21 +12,20 @@ from ...utils.calendar import CalendarTypes
 ##########################################################################
 
 
-class IborConventions():
+class IborConventions:
 
-    def __init__(self,
-                 currencyName: str,
-                 indexName: str = "LIBOR"):
+    def __init__(self, currency_name: str, index_name: str = "LIBOR"):
 
-        if currencyName == "USD" and indexName == "LIBOR":
-            self._spotLag = 2
-            self._day_count_type = DayCountTypes.THIRTY_E_360_ISDA
-            self._calendar_type = CalendarTypes.TARGET
-        elif currencyName == "EUR" and indexName == "EURIBOR":
-            self._spotLag = 2
-            self._day_count_type = DayCountTypes.THIRTY_E_360_ISDA
-            self._calendar_type = CalendarTypes.TARGET
+        if currency_name == "USD" and index_name == "LIBOR":
+            self.spot_lag = 2
+            self.dc_type = DayCountTypes.THIRTY_E_360_ISDA
+            self.cal_type = CalendarTypes.TARGET
+        elif currency_name == "EUR" and index_name == "EURIBOR":
+            self.spot_lag = 2
+            self.dc_type = DayCountTypes.THIRTY_E_360_ISDA
+            self.cal_type = CalendarTypes.TARGET
         else:
             pass
+
 
 ###############################################################################

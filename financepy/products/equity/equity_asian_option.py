@@ -2,6 +2,7 @@
 # Copyright (C) 2018, 2019, 2020 Dominic O'Kane
 ##############################################################################
 
+from enum import Enum
 
 import numpy as np
 from numba import njit
@@ -10,7 +11,7 @@ from numba import njit
 # TODO: Add Sobol to Monte Carlo
 
 from ...utils.math import covar
-from ...utils.global_vars import gDaysInYear
+from ...utils.global_vars import g_days_in_year
 from ...utils.error import FinError
 
 from ...utils.global_types import OptionTypes
@@ -23,13 +24,12 @@ from ...utils.math import N
 
 ###############################################################################
 
-from enum import Enum
-
 
 class AsianOptionValuationMethods(Enum):
-    GEOMETRIC = 1,
-    TURNBULL_WAKEMAN = 2,
+    GEOMETRIC = (1,)
+    TURNBULL_WAKEMAN = (2,)
     CURRAN = 3
+
 
 ###############################################################################
 
@@ -66,19 +66,21 @@ errorStr = "In averaging period so need to enter accrued average."
 
 
 @njit(cache=True, fastmath=True)
-def _value_mc_numba(t0,
-                    t,
-                    tau,
-                    K,
-                    n,
-                    option_type,
-                    stock_price,
-                    interest_rate,
-                    dividend_yield,
-                    volatility,
-                    num_paths,
-                    seed,
-                    accruedAverage):
+def _value_mc_numba(
+    t0,
+    t,
+    tau,
+    k,
+    n,
+    option_type,
+    stock_price,
+    interest_rate,
+    dividend_yield,
+    volatility,
+    num_paths,
+    seed,
+    accrued_average,
+):
 
     # Start pricing here
     np.random.seed(seed)
@@ -86,11 +88,11 @@ def _value_mc_numba(t0,
 
     if t0 < 0.0:  # we are in the averaging period
 
-        if accruedAverage is None:
+        if accrued_average is None:
             raise FinError(errorStr)
 
         # we adjust the strike to account for the accrued coupon
-        K = (K * tau + accruedAverage * t0) / t
+        k = (k * tau + accrued_average * t0) / t
         # the number of options is rescaled also
         multiplier = t / tau
         # there is no pre-averaging time
@@ -108,10 +110,12 @@ def _value_mc_numba(t0,
 
         # evolve stock price to start of averaging period
         g = np.random.standard_normal(1)
-        s_1 = stock_price * np.exp((mu - v2 / 2.0) * t0 +
-                                   g[0] * np.sqrt(t0) * volatility)
-        s_2 = stock_price * np.exp((mu - v2 / 2.0) * t0 -
-                                   g[0] * np.sqrt(t0) * volatility)
+        s_1 = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 + g[0] * np.sqrt(t0) * volatility
+        )
+        s_2 = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 - g[0] * np.sqrt(t0) * volatility
+        )
 
         # enter averaging period
         s_1_arithmetic = 0.0
@@ -121,11 +125,13 @@ def _value_mc_numba(t0,
 
         for obs in range(0, n):
 
-            s_1 = s_1 * np.exp((mu - v2 / 2.0) * dt +
-                               g[obs] * np.sqrt(dt) * volatility)
+            s_1 = s_1 * np.exp(
+                (mu - v2 / 2.0) * dt + g[obs] * np.sqrt(dt) * volatility
+            )
 
-            s_2 = s_2 * np.exp((mu - v2 / 2.0) * dt -
-                               g[obs] * np.sqrt(dt) * volatility)
+            s_2 = s_2 * np.exp(
+                (mu - v2 / 2.0) * dt - g[obs] * np.sqrt(dt) * volatility
+            )
 
             s_1_arithmetic += s_1
             s_2_arithmetic += s_2
@@ -134,11 +140,11 @@ def _value_mc_numba(t0,
         s_2_arithmetic /= n
 
         if option_type == OptionTypes.EUROPEAN_CALL:
-            payoff_a += max(s_1_arithmetic - K, 0.0)
-            payoff_a += max(s_2_arithmetic - K, 0.0)
+            payoff_a += max(s_1_arithmetic - k, 0.0)
+            payoff_a += max(s_2_arithmetic - k, 0.0)
         elif option_type == OptionTypes.EUROPEAN_PUT:
-            payoff_a += max(K - s_1_arithmetic, 0.0)
-            payoff_a += max(K - s_2_arithmetic, 0.0)
+            payoff_a += max(k - s_1_arithmetic, 0.0)
+            payoff_a += max(k - s_2_arithmetic, 0.0)
         else:
             return None
 
@@ -146,23 +152,26 @@ def _value_mc_numba(t0,
     v_a = v_a * multiplier
     return v_a
 
+
 ###############################################################################
 
 
 @njit(cache=True, fastmath=True)
-def _value_mc_fast_numba(t0: float,
-                         t: float,
-                         tau: float,
-                         K: float,
-                         n: int,
-                         option_type: int,
-                         stock_price: float,
-                         interest_rate: float,
-                         dividend_yield: float,
-                         volatility: float,
-                         num_paths: int,
-                         seed: int,
-                         accruedAverage: float):
+def _value_mc_fast_numba(
+    t0: float,
+    t: float,
+    tau: float,
+    k: float,
+    n: int,
+    option_type: int,
+    stock_price: float,
+    interest_rate: float,
+    dividend_yield: float,
+    volatility: float,
+    num_paths: int,
+    seed: int,
+    accrued_average: float,
+):
 
     np.random.seed(seed)
     mu = interest_rate - dividend_yield
@@ -175,11 +184,11 @@ def _value_mc_fast_numba(t0: float,
 
     if t0 < 0.0:  # we are in the averaging period
 
-        if accruedAverage is None:
+        if accrued_average is None:
             raise FinError(errorStr)
 
         # we adjust the strike to account for the accrued coupon
-        K = (K * tau + accruedAverage * t0) / t
+        k = (k * tau + accrued_average * t0) / t
         # the number of options is rescaled also
         multiplier = t / tau
         # there is no pre-averaging time
@@ -191,18 +200,20 @@ def _value_mc_fast_numba(t0: float,
     # g = np.random.normal(0.0, 1.0, size=(num_paths))
 
     gg = np.empty(num_paths, np.float64)
-    for iPath in range(0, num_paths):
+    for i_path in range(0, num_paths):
         rv = np.random.normal()
-        gg[iPath] = rv
+        gg[i_path] = rv
 
     s_1 = np.empty(num_paths)
     s_2 = np.empty(num_paths)
 
     for ip in range(0, num_paths):
-        s_1[ip] = stock_price * \
-            np.exp((mu - v2 / 2.0) * t0 + gg[ip] * np.sqrt(t0) * volatility)
-        s_2[ip] = stock_price * \
-            np.exp((mu - v2 / 2.0) * t0 - gg[ip] * np.sqrt(t0) * volatility)
+        s_1[ip] = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 + gg[ip] * np.sqrt(t0) * volatility
+        )
+        s_2[ip] = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 - gg[ip] * np.sqrt(t0) * volatility
+        )
 
     s_1_arithmetic = np.zeros(num_paths)
     s_2_arithmetic = np.zeros(num_paths)
@@ -212,35 +223,51 @@ def _value_mc_fast_numba(t0: float,
         g = np.random.normal(0.0, 1.0, size=(num_paths))
 
         for ip in range(0, num_paths):
-            s_1[ip] = s_1[ip] * np.exp((mu - v2 / 2.0) *
-                                       dt + g[ip] * np.sqrt(dt) * volatility)
-            s_2[ip] = s_2[ip] * np.exp((mu - v2 / 2.0) *
-                                       dt - g[ip] * np.sqrt(dt) * volatility)
+            s_1[ip] = s_1[ip] * np.exp(
+                (mu - v2 / 2.0) * dt + g[ip] * np.sqrt(dt) * volatility
+            )
+            s_2[ip] = s_2[ip] * np.exp(
+                (mu - v2 / 2.0) * dt - g[ip] * np.sqrt(dt) * volatility
+            )
 
         for ip in range(0, num_paths):
             s_1_arithmetic[ip] += s_1[ip] / n
             s_2_arithmetic[ip] += s_2[ip] / n
 
     if option_type == OptionTypes.EUROPEAN_CALL.value:
-        payoff_a_1 = np.maximum(s_1_arithmetic - K, 0.0)
-        payoff_a_2 = np.maximum(s_2_arithmetic - K, 0.0)
+        payoff_a_1 = np.maximum(s_1_arithmetic - k, 0.0)
+        payoff_a_2 = np.maximum(s_2_arithmetic - k, 0.0)
     elif option_type == OptionTypes.EUROPEAN_PUT.value:
-        payoff_a_1 = np.maximum(K - s_1_arithmetic, 0.0)
-        payoff_a_2 = np.maximum(K - s_2_arithmetic, 0.0)
+        payoff_a_1 = np.maximum(k - s_1_arithmetic, 0.0)
+        payoff_a_2 = np.maximum(k - s_2_arithmetic, 0.0)
     else:
         raise FinError("Unknown option type.")
 
     payoff_a = np.mean(payoff_a_1) + np.mean(payoff_a_2)
-    v_a = multiplier * payoff_a * np.exp(- r * t) / 2.0
+    v_a = multiplier * payoff_a * np.exp(-r * t) / 2.0
     return v_a
+
 
 ###############################################################################
 
 
 @njit(cache=True, fastmath=True)
-def _value_mc_fast_cv_numba(t0, t, tau, K, n, option_type, stock_price,
-                            interest_rate, dividend_yield, volatility, num_paths,
-                            seed, accruedAverage, v_g_exact):
+def _value_mc_fast_cv_numba(
+    t0,
+    t,
+    tau,
+    K,
+    n,
+    option_type,
+    stock_price,
+    interest_rate,
+    dividend_yield,
+    volatility,
+    num_paths,
+    seed,
+    accrued_average,
+    v_g_exact,
+):
 
     np.random.seed(seed)
     mu = interest_rate - dividend_yield
@@ -252,11 +279,11 @@ def _value_mc_fast_cv_numba(t0, t, tau, K, n, option_type, stock_price,
 
     if t0 < 0:  # we are in the averaging period
 
-        if accruedAverage is None:
+        if accrued_average is None:
             raise FinError(errorStr)
 
         # we adjust the strike to account for the accrued coupon
-        K = (K * tau + accruedAverage * t0) / t
+        K = (K * tau + accrued_average * t0) / t
         # the number of options is rescaled also
         multiplier = t / tau
         # there is no pre-averaging time
@@ -271,10 +298,12 @@ def _value_mc_fast_cv_numba(t0, t, tau, K, n, option_type, stock_price,
     s_2 = np.empty(num_paths)
 
     for ip in range(0, num_paths):
-        s_1[ip] = stock_price * \
-            np.exp((mu - v2 / 2.0) * t0 + g[ip] * np.sqrt(t0) * volatility)
-        s_2[ip] = stock_price * \
-            np.exp((mu - v2 / 2.0) * t0 - g[ip] * np.sqrt(t0) * volatility)
+        s_1[ip] = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 + g[ip] * np.sqrt(t0) * volatility
+        )
+        s_2[ip] = stock_price * np.exp(
+            (mu - v2 / 2.0) * t0 - g[ip] * np.sqrt(t0) * volatility
+        )
 
     s_1_arithmetic = np.zeros(num_paths)
     s_2_arithmetic = np.zeros(num_paths)
@@ -285,10 +314,12 @@ def _value_mc_fast_cv_numba(t0, t, tau, K, n, option_type, stock_price,
 
         g = np.random.normal(0.0, 1.0, size=(num_paths))
         for ip in range(0, num_paths):
-            s_1[ip] = s_1[ip] * np.exp((mu - v2 / 2.0) *
-                                       dt + g[ip] * np.sqrt(dt) * volatility)
-            s_2[ip] = s_2[ip] * np.exp((mu - v2 / 2.0) *
-                                       dt - g[ip] * np.sqrt(dt) * volatility)
+            s_1[ip] = s_1[ip] * np.exp(
+                (mu - v2 / 2.0) * dt + g[ip] * np.sqrt(dt) * volatility
+            )
+            s_2[ip] = s_2[ip] * np.exp(
+                (mu - v2 / 2.0) * dt - g[ip] * np.sqrt(dt) * volatility
+            )
 
         for ip in range(0, num_paths):
             s_1_arithmetic[ip] += s_1[ip]
@@ -340,49 +371,54 @@ def _value_mc_fast_cv_numba(t0, t, tau, K, n, option_type, stock_price,
 
     return v_a_cv
 
+
 ###############################################################################
 
 
 class EquityAsianOption:
-    """ Class for an Equity Asian Option. This is an option with a final payoff
+    """Class for an Equity Asian Option. This is an option with a final payoff
     linked to the averaging of the stock price over some specified period
     before the option expires. The valuation is done for both an arithmetic and
     a geometric average but the former can only be done either using an
     analytical approximation of the arithmetic average distribution or by using
     Monte-Carlo simulation."""
 
-    def __init__(self,
-                 startAveragingDate: Date,
-                 expiry_date: Date,
-                 strike_price: float,
-                 option_type: OptionTypes,
-                 numberOfObservations: int = 100):
-        """ Create an EquityAsian option object which takes a start date for
+    def __init__(
+        self,
+        start_averaging_dt: Date,
+        expiry_dt: Date,
+        strike_price: float,
+        option_type: OptionTypes,
+        num_obs: int = 100,
+    ):
+        """Create an EquityAsian option object which takes a start date for
         the averaging, an expiry date, a strike price, an option type and a
-        number of observations. """
+        number of observations."""
 
         check_argument_types(self.__init__, locals())
 
-        if startAveragingDate > expiry_date:
+        if start_averaging_dt > expiry_dt:
             raise FinError("Averaging starts after expiry date")
 
-        self._startAveragingDate = startAveragingDate
-        self._expiry_date = expiry_date
-        self._strike_price = float(strike_price)
-        self._option_type = option_type
-        self._num_observations = numberOfObservations
+        self.start_averaging_date = start_averaging_dt
+        self.expiry_dt = expiry_dt
+        self.strike_price = float(strike_price)
+        self.option_type = option_type
+        self.num_observations = num_obs
 
-###############################################################################
+    ###############################################################################
 
-    def value(self,
-              valuation_date: Date,
-              stock_price: float,
-              discount_curve: DiscountCurve,
-              dividend_curve: DiscountCurve,
-              model,
-              method: AsianOptionValuationMethods,
-              accruedAverage: float = None):
-        """ Calculate the value of an Asian option using one of the specified
+    def value(
+        self,
+        value_dt: Date,
+        stock_price: float,
+        discount_curve: DiscountCurve,
+        dividend_curve: DiscountCurve,
+        model,
+        method: AsianOptionValuationMethods,
+        accrued_average: float = None,
+    ):
+        """Calculate the value of an Asian option using one of the specified
         analytical approximations for an average rate option. These are the
         three enumerated values in the enum AsianOptionValuationMethods. The
         choices of approximation are (i) GEOMETRIC - the average is a geometric
@@ -394,253 +430,286 @@ class EquityAsianOption:
         different approaches.
 
         Note that the accrued average is only required if the value date is
-        inside the averaging period for the option. """
+        inside the averaging period for the option."""
 
-        if valuation_date > self._expiry_date:
+        if value_dt > self.expiry_dt:
             raise FinError("Value date after expiry date.")
 
-        if discount_curve._valuation_date != valuation_date:
+        if discount_curve.value_dt != value_dt:
             raise FinError(
-                "Discount Curve valuation date not same as option valuation date")
+                "Discount Curve valuation date not same as option valuation date"
+            )
 
-        if dividend_curve._valuation_date != valuation_date:
+        if dividend_curve.value_dt != value_dt:
             raise FinError(
-                "Dividend Curve valuation date not same as option valuation date")
+                "Dividend Curve valuation date not same as option valuation date"
+            )
 
         if method == AsianOptionValuationMethods.GEOMETRIC:
-            v = self._value_geometric(valuation_date,
-                                      stock_price,
-                                      discount_curve,
-                                      dividend_curve,
-                                      model,
-                                      accruedAverage)
+            v = self._value_geometric(
+                value_dt,
+                stock_price,
+                discount_curve,
+                dividend_curve,
+                model,
+                accrued_average,
+            )
 
         elif method == AsianOptionValuationMethods.TURNBULL_WAKEMAN:
-            v = self._value_turnbull_wakeman(valuation_date,
-                                             stock_price,
-                                             discount_curve,
-                                             dividend_curve,
-                                             model,
-                                             accruedAverage)
+            v = self._value_turnbull_wakeman(
+                value_dt,
+                stock_price,
+                discount_curve,
+                dividend_curve,
+                model,
+                accrued_average,
+            )
 
         elif method == AsianOptionValuationMethods.CURRAN:
-            v = self._value_curran(valuation_date,
-                                   stock_price,
-                                   discount_curve,
-                                   dividend_curve,
-                                   model,
-                                   accruedAverage)
+            v = self._value_curran(
+                value_dt,
+                stock_price,
+                discount_curve,
+                dividend_curve,
+                model,
+                accrued_average,
+            )
         else:
             raise FinError("Unknown valuation model")
 
         return v
 
-###############################################################################
+    ###############################################################################
 
-    def _value_geometric(self, valuation_date, stock_price, discount_curve,
-                         dividend_curve, model, accruedAverage):
-        """ This option valuation is based on paper by Kemna and Vorst 1990. It
+    def _value_geometric(
+        self,
+        value_dt,
+        stock_price,
+        discount_curve,
+        dividend_curve,
+        model,
+        accrued_average,
+    ):
+        """This option valuation is based on paper by Kemna and Vorst 1990. It
         calculates the Geometric Asian option price which is a lower bound on
         the Arithmetic option price. This should not be used as a valuation
         model for the Arithmetic Average option but can be used as a control
-        variate for other approaches. """
+        variate for other approaches."""
 
-        if valuation_date > self._expiry_date:
+        if value_dt > self.expiry_dt:
             raise FinError("Value date after option expiry date.")
 
         # the years to the start of the averaging period
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-#        print("r:", r, "q:", q)
+        #        print("r:", r, "q:", q)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
-        K = self._strike_price
-        n = self._num_observations
-        S0 = stock_price
+        K = self.strike_price
+        n = self.num_observations
+        s0 = stock_price
 
         multiplier = 1.0
 
         if t0 < 0:  # we are in the averaging period
 
-            if accruedAverage is None:
+            if accrued_average is None:
                 raise FinError(errorStr)
 
             # we adjust the strike to account for the accrued coupon
-            K = (K * tau + accruedAverage * t0) / texp
+            K = (K * tau + accrued_average * t0) / t_exp
             # the number of options is rescaled also
-            multiplier = texp / tau
+            multiplier = t_exp / tau
             # there is no pre-averaging time
             t0 = 0.0
             # the number of observations is scaled
-            n = n * texp / tau
+            n = n * t_exp / tau
 
-        sigSq = volatility ** 2
-        meanGeo = (r - q - sigSq / 2.0) * (t0 + (texp - t0) / 2.0)
-        varGeo = sigSq * (t0 + (texp - t0) * (2 * n - 1) / (6 * n))
-        EG = S0 * np.exp(meanGeo + varGeo / 2.0)
+        sigSq = volatility**2
+        meanGeo = (r - q - sigSq / 2.0) * (t0 + (t_exp - t0) / 2.0)
+        varGeo = sigSq * (t0 + (t_exp - t0) * (2 * n - 1) / (6 * n))
+        EG = s0 * np.exp(meanGeo + varGeo / 2.0)
 
         if np.abs(varGeo) < 1e-10:
             raise FinError("Asian option geometric variance is zero.")
 
-        d1 = (meanGeo + np.log(S0 / K) + varGeo) / np.sqrt(varGeo)
+        d1 = (meanGeo + np.log(s0 / K) + varGeo) / np.sqrt(varGeo)
         d2 = d1 - np.sqrt(varGeo)
 
         # the Geometric price is the lower bound
-        call_g = np.exp(-r * texp) * (EG * N(d1) - K * N(d2))
+        call_g = np.exp(-r * t_exp) * (EG * N(d1) - K * N(d2))
 
-        if self._option_type == OptionTypes.EUROPEAN_CALL:
+        if self.option_type == OptionTypes.EUROPEAN_CALL:
             v = call_g
-        elif self._option_type == OptionTypes.EUROPEAN_PUT:
-            put_g = call_g - (EG - K) * np.exp(-r * texp)
+        elif self.option_type == OptionTypes.EUROPEAN_PUT:
+            put_g = call_g - (EG - K) * np.exp(-r * t_exp)
             v = put_g
         else:
-            raise FinError("Unknown option type " + str(self._option_type))
+            raise FinError("Unknown option type " + str(self.option_type))
 
         v = v * multiplier
         return v
 
-###############################################################################
+    ###############################################################################
 
-    def _value_curran(self, valuation_date, stock_price, discount_curve,
-                      dividend_curve, model, accruedAverage):
-        """ Valuation of an Asian option using the result by Vorst. """
+    def _value_curran(
+        self,
+        value_dt,
+        stock_price,
+        discount_curve,
+        dividend_curve,
+        model,
+        accrued_average,
+    ):
+        """Valuation of an Asian option using the result by Vorst."""
 
-        if valuation_date > self._expiry_date:
+        if value_dt > self.expiry_dt:
             raise FinError("Value date after option expiry date.")
 
         # the years to the start of the averaging period
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
         multiplier = 1.0
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
-        S0 = stock_price
+        s0 = stock_price
         b = r - q
         sigma2 = volatility**2
-        K = self._strike_price
+        K = self.strike_price
 
-        n = self._num_observations
+        n = self.num_observations
 
         if t0 < 0:  # we are in the averaging period
 
-            if accruedAverage is None:
+            if accrued_average is None:
                 raise FinError(errorStr)
 
             # we adjust the strike to account for the accrued coupon
-            K = (K * tau + accruedAverage * t0) / texp
+            K = (K * tau + accrued_average * t0) / t_exp
             # the number of options is rescaled also
-            multiplier = texp / tau
+            multiplier = t_exp / tau
             # there is no pre-averaging time
             t0 = 0.0
             # the number of observations is scaled and floored at 1
-            n = int(n * texp / tau + 0.5) + 1
+            n = int(n * t_exp / tau + 0.5) + 1
 
-        h = (texp - t0) / (n - 1)
+        h = (t_exp - t0) / (n - 1)
         u = (1.0 - np.exp(b * h * n)) / (1.0 - np.exp(b * h))
-        w = (1.0 - np.exp((2 * b + sigma2) * h * n)) / \
-            (1.0 - np.exp((2 * b + sigma2) * h))
+        w = (1.0 - np.exp((2 * b + sigma2) * h * n)) / (
+            1.0 - np.exp((2 * b + sigma2) * h)
+        )
 
-        FA = (S0 / n) * np.exp(b * t0) * u
-        EA2 = (S0 * S0 / n / n) * np.exp((2.0 * b + sigma2) * t0)
+        FA = (s0 / n) * np.exp(b * t0) * u
+        EA2 = (s0 * s0 / n / n) * np.exp((2.0 * b + sigma2) * t0)
         EA2 = EA2 * (w + 2.0 / (1.0 - np.exp((b + sigma2) * h)) * (u - w))
-        sigmaA = np.sqrt((np.log(EA2) - 2.0 * np.log(FA)) / texp)
+        sigmaA = np.sqrt((np.log(EA2) - 2.0 * np.log(FA)) / t_exp)
 
-        d1 = (np.log(FA / K) + sigmaA * sigmaA *
-              texp / 2.0) / (sigmaA*np.sqrt(texp))
-        d2 = d1 - sigmaA * np.sqrt(texp)
+        d1 = (np.log(FA / K) + sigmaA * sigmaA * t_exp / 2.0) / (
+            sigmaA * np.sqrt(t_exp)
+        )
+        d2 = d1 - sigmaA * np.sqrt(t_exp)
 
-        if self._option_type == OptionTypes.EUROPEAN_CALL:
-            v = np.exp(-r * texp) * (FA * N(d1) - K * N(d2))
-        elif self._option_type == OptionTypes.EUROPEAN_PUT:
-            v = np.exp(-r * texp) * (K * N(-d2) - FA * N(-d1))
+        if self.option_type == OptionTypes.EUROPEAN_CALL:
+            v = np.exp(-r * t_exp) * (FA * N(d1) - K * N(d2))
+        elif self.option_type == OptionTypes.EUROPEAN_PUT:
+            v = np.exp(-r * t_exp) * (K * N(-d2) - FA * N(-d1))
         else:
             return None
 
         v = v * multiplier
         return v
 
-###############################################################################
+    ###############################################################################
 
-    def _value_turnbull_wakeman(self, valuation_date, stock_price, discount_curve,
-                                dividend_curve, model, accruedAverage):
-        """ Asian option valuation based on paper by Turnbull and Wakeman 1991
+    def _value_turnbull_wakeman(
+        self,
+        value_dt,
+        stock_price,
+        discount_curve,
+        dividend_curve,
+        model,
+        accrued_average,
+    ):
+        """Asian option valuation based on paper by Turnbull and Wakeman 1991
         which uses the edgeworth expansion to find the first two moments of the
-        arithmetic average. """
+        arithmetic average."""
 
-        if valuation_date > self._expiry_date:
+        if value_dt > self.expiry_dt:
             raise FinError("Value date after option expiry date.")
 
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
-        K = self._strike_price
+        K = self.strike_price
         multiplier = 1.0
-        n = self._num_observations
+        n = self.num_observations
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
         if t0 < 0:  # we are in the averaging period
 
-            if accruedAverage is None:
+            if accrued_average is None:
                 raise FinError(errorStr)
 
             # we adjust the strike to account for the accrued coupon
-            K = (K * tau + accruedAverage * t0) / texp
+            K = (K * tau + accrued_average * t0) / t_exp
             # the number of options is rescaled also
-            multiplier = texp / tau
+            multiplier = t_exp / tau
             # there is no pre-averaging time
             t0 = 0.0
             # the number of observations is scaled and floored at 1
-            n = int(n * texp / tau + 0.5) + 1
+            n = int(n * t_exp / tau + 0.5) + 1
 
         # need to handle this
         b = r - q
         sigma2 = volatility**2
         a1 = b + sigma2
         a2 = 2 * b + sigma2
-        S0 = stock_price
+        s0 = stock_price
 
-        dt = texp - t0
+        dt = t_exp - t0
 
         if b == 0:
             M1 = 1.0
-            M2 = 2.0 * np.exp(sigma2 * texp) - 2.0 * \
-                np.exp(sigma2 * t0) * (1.0 + sigma2 * dt)
+            M2 = 2.0 * np.exp(sigma2 * t_exp) - 2.0 * np.exp(sigma2 * t0) * (
+                1.0 + sigma2 * dt
+            )
             M2 = M2 / sigma2 / sigma2 / dt / dt
         else:
-            M1 = S0 * (np.exp(b * texp) - np.exp(b * t0)) / (b * dt)
-            M2 = np.exp(a2 * texp) / a1 / a2 / dt / dt + \
-                (np.exp(a2 * t0) / b / dt / dt) * (1.0/a2 - np.exp(b*dt) / a1)
-            M2 = 2.0 * M2 * S0 * S0
+            M1 = s0 * (np.exp(b * t_exp) - np.exp(b * t0)) / (b * dt)
+            M2 = np.exp(a2 * t_exp) / a1 / a2 / dt / dt + (
+                np.exp(a2 * t0) / b / dt / dt
+            ) * (1.0 / a2 - np.exp(b * dt) / a1)
+            M2 = 2.0 * M2 * s0 * s0
 
         F0 = M1
-        sigma2 = (1.0 / texp) * np.log(M2 / M1 / M1)
+        sigma2 = (1.0 / t_exp) * np.log(M2 / M1 / M1)
         sigma = np.sqrt(sigma2)
 
-        d1 = (np.log(F0 / K) + sigma2 * texp / 2) / sigma / np.sqrt(texp)
-        d2 = d1 - sigma * np.sqrt(texp)
+        d1 = (np.log(F0 / K) + sigma2 * t_exp / 2) / sigma / np.sqrt(t_exp)
+        d2 = d1 - sigma * np.sqrt(t_exp)
 
-        if self._option_type == OptionTypes.EUROPEAN_CALL:
-            call = np.exp(-r * texp) * (F0 * N(d1) - K * N(d2))
+        if self.option_type == OptionTypes.EUROPEAN_CALL:
+            call = np.exp(-r * t_exp) * (F0 * N(d1) - K * N(d2))
             v = call
-        elif self._option_type == OptionTypes.EUROPEAN_PUT:
-            put = np.exp(-r * texp) * (K * N(-d2) - F0 * N(-d1))
+        elif self.option_type == OptionTypes.EUROPEAN_PUT:
+            put = np.exp(-r * t_exp) * (K * N(-d2) - F0 * N(-d1))
             v = put
         else:
             return None
@@ -648,159 +717,183 @@ class EquityAsianOption:
         v = v * multiplier
         return v
 
-###############################################################################
+    ###############################################################################
 
-    def _value_mc(self,
-                  valuation_date: Date,
-                  stock_price: float,
-                  discount_curve: DiscountCurve,
-                  dividend_curve: DiscountCurve,
-                  model,
-                  num_paths: int,
-                  seed: int,
-                  accruedAverage: float):
-        """ Monte Carlo valuation of the Asian Average option using standard
+    def _value_mc(
+        self,
+        value_dt: Date,
+        stock_price: float,
+        discount_curve: DiscountCurve,
+        dividend_curve: DiscountCurve,
+        model,
+        num_paths: int,
+        seed: int,
+        accrued_average: float,
+    ):
+        """Monte Carlo valuation of the Asian Average option using standard
         Monte Carlo code enhanced by Numba. I have discontinued the use of this
-        as it is both slow and has limited variance reduction. """
+        as it is both slow and has limited variance reduction."""
 
         # Basic validation
-        if valuation_date > self._expiry_date:
+        if value_dt > self.expiry_dt:
             raise FinError("Value date after option expiry date.")
 
-        if valuation_date > self._startAveragingDate and accruedAverage is None:
+        if value_dt > self.start_averaging_date and accrued_average is None:
             raise FinError(errorStr)
 
         # the years to the start of the averaging period
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
-        K = self._strike_price
-        n = self._num_observations
+        K = self.strike_price
+        n = self.num_observations
 
-        v = _value_mc_numba(t0, texp, tau, K, n, self._option_type,
-                            stock_price,
-                            r,
-                            q,
-                            volatility,
-                            num_paths,
-                            seed,
-                            accruedAverage)
+        v = _value_mc_numba(
+            t0,
+            t_exp,
+            tau,
+            K,
+            n,
+            self.option_type,
+            stock_price,
+            r,
+            q,
+            volatility,
+            num_paths,
+            seed,
+            accrued_average,
+        )
 
         return v
 
-##############################################################################
+    ##############################################################################
 
-    def _value_mc_fast(self,
-                       valuation_date,
-                       stock_price,
-                       discount_curve,
-                       dividend_curve,  # Yield
-                       model,          # Model
-                       num_paths,       # Numpaths integer
-                       seed,
-                       accruedAverage):
-        """ Monte Carlo valuation of the Asian Average option. This method uses
-        a lot of Numpy vectorisation. It is also helped by Numba. """
+    def _value_mc_fast(
+        self,
+        value_dt,
+        stock_price,
+        discount_curve,
+        dividend_curve,  # Yield
+        model,  # Model
+        num_paths,  # Numpaths integer
+        seed,
+        accrued_average,
+    ):
+        """Monte Carlo valuation of the Asian Average option. This method uses
+        a lot of Numpy vectorisation. It is also helped by Numba."""
 
         # the years to the start of the averaging period
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
-        K = self._strike_price
-        n = self._num_observations
+        K = self.strike_price
+        n = self.num_observations
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
-        v = _value_mc_fast_numba(t0, texp, tau,
-                                 K, n, self._option_type.value,
-                                 stock_price,
-                                 r,
-                                 q,
-                                 volatility,
-                                 num_paths,
-                                 seed,
-                                 accruedAverage)
+        v = _value_mc_fast_numba(
+            t0,
+            t_exp,
+            tau,
+            K,
+            n,
+            self.option_type.value,
+            stock_price,
+            r,
+            q,
+            volatility,
+            num_paths,
+            seed,
+            accrued_average,
+        )
 
         return v
 
-###############################################################################
+    ###############################################################################
 
-    def value_mc(self,
-                 valuation_date: Date,
-                 stock_price: float,
-                 discount_curve: DiscountCurve,
-                 dividend_curve: DiscountCurve,
-                 model,
-                 num_paths: int,
-                 seed: int,
-                 accruedAverage: float):
-        """ Monte Carlo valuation of the Asian Average option using a control
+    def value_mc(
+        self,
+        value_dt: Date,
+        stock_price: float,
+        discount_curve: DiscountCurve,
+        dividend_curve: DiscountCurve,
+        model,
+        num_paths: int,
+        seed: int,
+        accrued_average: float,
+    ):
+        """Monte Carlo valuation of the Asian Average option using a control
         variate method that improves accuracy and reduces the variance of the
-        price. This uses Numpy and Numba. This is the standard MC pricer. """
+        price. This uses Numpy and Numba. This is the standard MC pricer."""
 
         # the years to the start of the averaging period
-        t0 = (self._startAveragingDate - valuation_date) / gDaysInYear
-        texp = (self._expiry_date - valuation_date) / gDaysInYear
-        tau = (self._expiry_date - self._startAveragingDate) / gDaysInYear
+        t0 = (self.start_averaging_date - value_dt) / g_days_in_year
+        t_exp = (self.expiry_dt - value_dt) / g_days_in_year
+        tau = (self.expiry_dt - self.start_averaging_date) / g_days_in_year
 
-        K = self._strike_price
-        n = self._num_observations
+        K = self.strike_price
+        n = self.num_observations
 
-        r = discount_curve.cc_rate(self._expiry_date)
-        q = dividend_curve.cc_rate(self._expiry_date)
+        r = discount_curve.cc_rate(self.expiry_dt)
+        q = dividend_curve.cc_rate(self.expiry_dt)
 
-        volatility = model._volatility
+        volatility = model.volatility
 
         # For control variate we price a Geometric average option exactly
-        v_g_exact = self._value_geometric(valuation_date,
-                                          stock_price,
-                                          discount_curve,
-                                          dividend_curve,
-                                          model,
-                                          accruedAverage)
+        v_g_exact = self._value_geometric(
+            value_dt,
+            stock_price,
+            discount_curve,
+            dividend_curve,
+            model,
+            accrued_average,
+        )
 
-        v = _value_mc_fast_cv_numba(t0,
-                                    texp,
-                                    tau,
-                                    K,
-                                    n,
-                                    self._option_type,
-                                    stock_price,
-                                    r,
-                                    q,
-                                    volatility,
-                                    num_paths,
-                                    seed,
-                                    accruedAverage,
-                                    v_g_exact)
+        v = _value_mc_fast_cv_numba(
+            t0,
+            t_exp,
+            tau,
+            K,
+            n,
+            self.option_type,
+            stock_price,
+            r,
+            q,
+            volatility,
+            num_paths,
+            seed,
+            accrued_average,
+            v_g_exact,
+        )
 
         return v
 
-###############################################################################
+    ###############################################################################
 
     def __repr__(self):
         s = label_to_string("OBJECT TYPE", type(self).__name__)
-        s += label_to_string("START AVERAGING DATE", self._startAveragingDate)
-        s += label_to_string("EXPIRY DATE", self._expiry_date)
-        s += label_to_string("STRIKE PRICE", self._strike_price)
-        s += label_to_string("OPTION TYPE", self._option_type)
-        s += label_to_string("NUM OBSERVATIONS", self._num_observations, "")
+        s += label_to_string("START AVERAGING DATE", self.start_averaging_date)
+        s += label_to_string("EXPIRY DATE", self.expiry_dt)
+        s += label_to_string("STRIKE PRICE", self.strike_price)
+        s += label_to_string("OPTION TYPE", self.option_type)
+        s += label_to_string("NUM OBSERVATIONS", self.num_observations, "")
         return s
 
-###############################################################################
+    ###############################################################################
 
     def _print(self):
-        """ Simple print function for backward compatibility. """
+        """Simple print function for backward compatibility."""
         print(self)
+
 
 ###############################################################################

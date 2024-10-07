@@ -11,22 +11,19 @@ from ...utils.math import test_monotonicity
 # TODO: This should be deleted and replaced with equity_vol_surface
 
 
-class EquityVolCurve():
-    """ Class to manage a smile or skew in volatility at a single maturity
+class EquityVolCurve:
+    """Class to manage a smile or skew in volatility at a single maturity
     horizon. It fits the volatility using a polynomial. Includes analytics to
     extract the implied pdf of the underyling at maturity. THIS NEEDS TO BE
-    SUBSTITUTED WITH FINEQUITYVOLSURFACE. """
+    SUBSTITUTED WITH FINEQUITYVOLSURFACE."""
 
-###############################################################################
+    ###########################################################################
 
-    def __init__(self,
-                 curve_date,
-                 expiry_date,
-                 strikes,
-                 volatilities,
-                 polynomial=3):
+    def __init__(
+        self, curve_dt, expiry_dt, strikes, volatilities, polynomial=3
+    ):
 
-        if expiry_date <= curve_date:
+        if expiry_dt <= curve_dt:
             raise FinError("Expiry date before curve date.")
 
         if len(strikes) < 1:
@@ -45,18 +42,18 @@ class EquityVolCurve():
             if strikes[i] <= strikes[i - 1]:
                 raise FinError("Grid Strikes are not in increasing order")
 
-        self._curve_date = curve_date
+        self._curve_dt = curve_dt
         self._strikes = np.array(strikes)
         self._volatilities = np.array(volatilities)
 
         self._z = np.polyfit(self._strikes, self._volatilities, polynomial)
         self._f = np.poly1d(self._z)
 
-###############################################################################
+    ###########################################################################
 
     def volatility(self, strike):
-        """ Return the volatility for a strike using a given polynomial
-        interpolation. """
+        """Return the volatility for a strike using a given polynomial
+        interpolation."""
 
         vol = self._f(strike)
 
@@ -65,12 +62,13 @@ class EquityVolCurve():
 
         return vol
 
-###############################################################################
+    ###########################################################################
 
-    def calculate_pdf():
-        """ calculate the probability density function of the underlying using
+    def calculate_pdf(self):
+        """calculate the probability density function of the underlying using
         the volatility smile or skew curve following the approach set out in
-        Breedon and Litzenberger. """
-        pass
+        Breedon and Litzenberger."""
+        return
+
 
 ###############################################################################

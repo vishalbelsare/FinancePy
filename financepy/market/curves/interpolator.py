@@ -2,17 +2,17 @@
 # Copyright (C) 2018, 2019, 2020 Dominic O'Kane
 ##############################################################################
 
+from enum import Enum
 from numba import njit, float64, int64
 import numpy as np
-from ...utils.error import FinError
-from ...utils.global_vars import gSmall
-
 from scipy.interpolate import PchipInterpolator
 from scipy.interpolate import CubicSpline
+from scipy.interpolate import InterpolatedUnivariateSpline
+from ...utils.error import FinError
+from ...utils.global_vars import g_small
+from ...utils.tension_spline import TensionSpline
 
 ###############################################################################
-
-from enum import Enum
 
 
 class InterpTypes(Enum):
@@ -24,6 +24,8 @@ class InterpTypes(Enum):
     NATCUBIC_ZERO_RATES = 9
     PCHIP_ZERO_RATES = 10
     PCHIP_LOG_DISCOUNT = 11
+    LINEAR_ONFWD_RATES = 21
+    TENSION_ZERO_RATES = 22
 
 
 # LINEAR_SWAP_RATES = 3
@@ -40,7 +42,7 @@ def interpolate(t: (float, np.ndarray),  # time or array of times
     at times provided using one of the methods in the enum InterpTypes. The
     value of x can be an array so that the function is vectorised. """
 
-    if type(t) is float or type(t) is np.float64:
+    if isinstance(t, (float, np.float64)):
 
         if t < 0.0:
             print(t)
@@ -48,7 +50,7 @@ def interpolate(t: (float, np.ndarray),  # time or array of times
 
         u = _uinterpolate(t, times, dfs, method)
         return u
-    elif type(t) is np.ndarray:
+    elif isinstance(t, np.ndarray):
 
         if np.any(t < 0.0):
             print(t)
@@ -197,13 +199,15 @@ def _vinterpolate(xValues,
 class Interpolator():
 
     def __init__(self,
-                 interpolatorType: InterpTypes):
+                 interpolator_type: InterpTypes,
+                 **kwargs: dict):
 
-        self._interp_type = interpolatorType
+        self._interp_type = interpolator_type
         self._interp_fn = None
-        self._times = None
+        self.times = None
         self._dfs = None
         self._refit_curve = False
+        self._optional_interp_params = kwargs
 
     ###########################################################################
 
@@ -211,7 +215,7 @@ class Interpolator():
             times: np.ndarray,
             dfs: np.ndarray):
 
-        self._times = times
+        self.times = times
         self._dfs = dfs
 
         if len(times) == 1:
@@ -219,64 +223,104 @@ class Interpolator():
 
         if self._interp_type == InterpTypes.PCHIP_LOG_DISCOUNT:
 
-            logDfs = np.log(self._dfs)
-            self._interp_fn = PchipInterpolator(self._times, logDfs)
+            log_dfs = np.log(self._dfs)
+            self._interp_fn = PchipInterpolator(self.times, log_dfs)
 
         elif self._interp_type == InterpTypes.PCHIP_ZERO_RATES:
 
-            gSmallVector = np.ones(len(self._times)) * gSmall
-            zero_rates = -np.log(self._dfs) / (self._times + gSmallVector)
+            g_small_vector = np.ones(len(self.times)) * g_small
+            zero_rates = -np.log(self._dfs) / (self.times + g_small_vector)
 
-            if self._times[0] == 0.0:
+            if self.times[0] == 0.0:
                 zero_rates[0] = zero_rates[1]
 
-            self._interp_fn = PchipInterpolator(self._times, zero_rates)
+            self._interp_fn = PchipInterpolator(self.times, zero_rates)
 
         # if self._interp_type == InterpTypes.FINCUBIC_LOG_DISCOUNT:
 
         #     """ Second derivatives at left is zero and first derivative at
         #     right is clamped to zero. """
-        #     logDfs = np.log(self._dfs)
-        #     self._interp_fn = CubicSpline(self._times, logDfs,
+        #     log_dfs = np.log(self._dfs)
+        #     self._interp_fn = CubicSpline(self.times, log_dfs,
         #                                  bc_type=((2, 0.0), (1, 0.0)))
 
         elif self._interp_type == InterpTypes.FINCUBIC_ZERO_RATES:
 
             """ Second derivatives at left is zero and first derivative at
             right is clamped to zero. """
-            gSmallVector = np.ones(len(self._times)) * gSmall
-            zero_rates = -np.log(self._dfs) / (self._times + gSmallVector)
+            g_small_vector = np.ones(len(self.times)) * g_small
+            zero_rates = -np.log(self._dfs) / (self.times + g_small_vector)
 
-            if self._times[0] == 0.0:
+            if self.times[0] == 0.0:
                 zero_rates[0] = zero_rates[1]
 
-            self._interp_fn = CubicSpline(self._times, zero_rates,
+            self._interp_fn = CubicSpline(self.times, zero_rates,
                                           bc_type=((2, 0.0), (1, 0.0)))
 
         elif self._interp_type == InterpTypes.NATCUBIC_LOG_DISCOUNT:
 
             """ Second derivatives are clamped to zero at end points """
-            logDfs = np.log(self._dfs)
-            self._interp_fn = CubicSpline(self._times, logDfs,
+            log_dfs = np.log(self._dfs)
+            self._interp_fn = CubicSpline(self.times, log_dfs,
                                           bc_type='natural')
 
         elif self._interp_type == InterpTypes.NATCUBIC_ZERO_RATES:
 
             """ Second derivatives are clamped to zero at end points """
-            gSmallVector = np.ones(len(self._times)) * gSmall
-            zero_rates = -np.log(self._dfs) / (self._times + gSmallVector)
+            g_small_vector = np.ones(len(self.times)) * g_small
+            zero_rates = -np.log(self._dfs) / (self.times + g_small_vector)
 
-            if self._times[0] == 0.0:
+            if self.times[0] == 0.0:
                 zero_rates[0] = zero_rates[1]
 
-            self._interp_fn = CubicSpline(self._times, zero_rates,
+            self._interp_fn = CubicSpline(self.times, zero_rates,
                                           bc_type='natural')
 
     #        elif self._interp_type  == InterpTypes.LINEAR_LOG_DISCOUNT:
     #
-    #            logDfs = np.log(self._dfs)
-    #            self._interp_fn = interp1d(self._times, logDfs,
+    #            log_dfs = np.log(self._dfs)
+    #            self._interp_fn = interp1d(self.times, log_dfs,
     #                                      fill_value="extrapolate")
+
+        elif self._interp_type == InterpTypes.LINEAR_ONFWD_RATES:
+            onf_times = []
+            onf_rates = []
+            prev_df = 1.0
+            for t, df in zip(self.times, self._dfs):
+                if t == 0.0:
+                    continue
+                if len(onf_times) == 0:
+                    onfr = -np.log(df)/t
+                    onf_times = [0.0, t]
+                    onf_rates = [onfr, onfr]
+                else:
+                    prev_t = onf_times[-1]
+                    prev_r = onf_rates[-1]
+                    fwd_df = df/prev_df
+                    onf_int = -np.log(fwd_df)
+                    r = 2*onf_int/(t-prev_t) - prev_r
+
+                    onf_times.append(t)
+                    onf_rates.append(r)
+
+                prev_df = df
+
+            if len(onf_times) == 0:
+                self._interp_fn = InterpolatedUnivariateSpline(
+                    [0.0, 0.1], [0.0, 0.0], k=1, ext=3)
+            else:
+                self._interp_fn = InterpolatedUnivariateSpline(
+                    onf_times, onf_rates, k=1, ext=3)
+
+        elif self._interp_type == InterpTypes.TENSION_ZERO_RATES:
+            tension_sigma = self._optional_interp_params.get('sigma', 1.0)
+            gSmallVector = np.ones(len(self.times)) * g_small
+            zero_rates = -np.log(self._dfs) / (self.times + gSmallVector)
+
+            if self.times[0] == 0.0:
+                zero_rates[0] = zero_rates[1]
+
+            self._interp_fn = TensionSpline(self.times, zero_rates, sigma=tension_sigma)
 
     ###########################################################################
 
@@ -289,18 +333,18 @@ class Interpolator():
         if self._dfs is None:
             raise FinError("Dfs have not been set.")
 
-        if type(t) is float or type(t) is np.float64:
+        if isinstance(t, (float, np.float64)):
 
             if t < 0.0:
                 print(t)
                 raise FinError("Interpolate times must all be >= 0")
 
-            if np.abs(t) < gSmall:
+            if np.abs(t) < g_small:
                 return 1.0
 
             tvec = np.array([t])
 
-        elif type(t) is np.ndarray:
+        elif isinstance(t, np.ndarray):
 
             if np.any(t < 0.0):
                 print(t)
@@ -311,42 +355,67 @@ class Interpolator():
         else:
             raise FinError("t is not a recognized type")
 
-        if self._interp_type == InterpTypes.PCHIP_LOG_DISCOUNT:
+        if self._interp_type in [InterpTypes.PCHIP_LOG_DISCOUNT,
+                                 InterpTypes.NATCUBIC_LOG_DISCOUNT]:
 
             out = np.exp(self._interp_fn(tvec))
 
-        elif self._interp_type == InterpTypes.PCHIP_ZERO_RATES:
+        elif self._interp_type in [InterpTypes.PCHIP_ZERO_RATES,
+                                   InterpTypes.FINCUBIC_ZERO_RATES,
+                                   InterpTypes.NATCUBIC_ZERO_RATES,
+                                   InterpTypes.TENSION_ZERO_RATES, ]:
 
             out = np.exp(-tvec * self._interp_fn(tvec))
 
-        # if self._interp_type == InterpTypes.FINCUBIC_LOG_DISCOUNT:
+        elif self._interp_type == InterpTypes.LINEAR_ONFWD_RATES:
+            if self._interp_fn is None:
+                # not enough data was used to fit the curve -- never reached the fitting stage
+                # (not sure why we have if len(times) == 1: return in the fit(...) function but reluctant to change that)
+                # so work around this. already tested that _dfs is not None
+                if len(self._dfs) == 0 or self.times[0] == 0.0:
+                    out = [1.0]*len(tvec)
+                else:
+                    onf_rate = -np.log(self._dfs[0])/self.times[0]
+                    out = np.exp(-onf_rate * tvec)
+            else:
+                # apparently UnivariateSpline.integral assumes the function is zero outside the data limits (WHY??????)
+                # so work around that. Note that we always have t=0 in the data so only need to worry about the right tail
+                # Here we assume constant extrapolation, consistent with how we set up our interpolator
+                def true_integral(spline, t):
+                    last_t = spline.get_knots()[-1]
+                    i1 = spline.integral(0.0, min(t, last_t))
+                    i2 = (t - min(t, last_t)) * spline(last_t)
+                    return i1 + i2
 
-        #     out = np.exp(self._interp_fn(tvec))
-
-        elif self._interp_type == InterpTypes.FINCUBIC_ZERO_RATES:
-
-            out = np.exp(-tvec * self._interp_fn(tvec))
-
-        elif self._interp_type == InterpTypes.NATCUBIC_LOG_DISCOUNT:
-
-            out = np.exp(self._interp_fn(tvec))
-
-        elif self._interp_type == InterpTypes.NATCUBIC_ZERO_RATES:
-
-            out = np.exp(-tvec * self._interp_fn(tvec))
-
-        #        elif self._interp_type == InterpTypes.LINEAR_LOG_DISCOUNT:
-        #
-        #            out = np.exp(self._interp_fn(tvec))
-
+                log_dfs = [-true_integral(self._interp_fn, t) for t in tvec]
+                out = np.exp(log_dfs)
         else:
 
-            out = _vinterpolate(tvec, self._times, self._dfs,
+            out = _vinterpolate(tvec, self.times, self._dfs,
                                 self._interp_type.value)
 
-        if type(t) is float or type(t) is np.float64:
+        if isinstance(t, (float, np.float64)):
             return out[0]
         else:
             return out
+
+    @classmethod
+    def suitable_for_bootstrap(cls, interpType):
+
+        is_suitable = {
+            InterpTypes.FLAT_FWD_RATES: True,
+            InterpTypes.LINEAR_FWD_RATES: True,
+            InterpTypes.LINEAR_ZERO_RATES: True,
+            InterpTypes.FINCUBIC_ZERO_RATES: False,
+            InterpTypes.NATCUBIC_LOG_DISCOUNT: False,
+            InterpTypes.NATCUBIC_ZERO_RATES: False,
+            InterpTypes.PCHIP_ZERO_RATES: False,
+            InterpTypes.PCHIP_LOG_DISCOUNT: False,
+            InterpTypes.LINEAR_ONFWD_RATES: True,
+            InterpTypes.TENSION_ZERO_RATES: False,
+        }
+
+        return is_suitable[interpType]
+
 
 ###############################################################################

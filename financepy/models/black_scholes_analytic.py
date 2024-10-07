@@ -6,7 +6,7 @@ import numpy as np
 from numba import float64, int64, vectorize, njit
 
 from ..utils.global_types import OptionTypes
-from ..utils.global_vars import gSmall
+from ..utils.global_vars import g_small
 from ..utils.math import N, n_vect, n_prime_vect
 from ..utils.error import FinError
 from ..utils.solver_1d import bisection, newton, newton_secant
@@ -19,7 +19,7 @@ from ..utils.solver_1d import bisection, newton, newton_secant
 @vectorize([float64(float64, float64, float64, float64, float64, float64,
                     int64)], fastmath=True, cache=True)
 def bs_value(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
 
     if option_type_value == OptionTypes.EUROPEAN_CALL.value:
         phi = 1.0
@@ -27,19 +27,17 @@ def bs_value(s, t, k, r, q, v, option_type_value):
         phi = -1.0
     else:
         raise FinError("Unknown option type value")
-        return 0.0
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    vsqrtT = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    d2 = d1 - vsqrtT
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    d2 = d1 - v_sqrt_t
 
-#    value = phi * ss * n_vect(phi * d1) - phi * kk * n_vect(phi * d2)
     value = phi * ss * N(phi * d1) - phi * kk * N(phi * d2)
     return value
 
@@ -49,24 +47,22 @@ def bs_value(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_delta(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
-
+    """Price a derivative using Black-Scholes model."""
     if option_type_value == OptionTypes.EUROPEAN_CALL.value:
         phi = +1.0
     elif option_type_value == OptionTypes.EUROPEAN_PUT.value:
         phi = -1.0
     else:
-        raise FinError("Unknown option type value")
-        return 0.0
+        raise FinError("Error: Unknown option type value")
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    vsqrtT = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
     delta = phi * np.exp(-q*t) * n_vect(phi * d1)
     return delta
 
@@ -76,17 +72,17 @@ def bs_delta(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_gamma(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    vsqrtT = v * np.sqrt(t)
+    v_sqrt_t = v * np.sqrt(t)
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    gamma = np.exp(-q*t) * n_prime_vect(d1) / s / vsqrtT
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    gamma = np.exp(-q*t) * n_prime_vect(d1) / s / v_sqrt_t
     return gamma
 
 ###############################################################################
@@ -95,18 +91,17 @@ def bs_gamma(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_vega(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
-
-    sqrtT = np.sqrt(t)
-    vsqrtT = v * sqrtT
+    sqrt_t = np.sqrt(t)
+    v_sqrt_t = v * sqrt_t
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    vega = ss * sqrtT * n_prime_vect(d1)
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    vega = ss * sqrt_t * n_prime_vect(d1)
     return vega
 
 ###############################################################################
@@ -115,24 +110,24 @@ def bs_vega(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_theta(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
 
     if option_type_value == OptionTypes.EUROPEAN_CALL.value:
         phi = 1.0
     elif option_type_value == OptionTypes.EUROPEAN_PUT.value:
         phi = -1.0
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    sqrtT = np.sqrt(t)
-    vsqrtT = v * sqrtT
+    sqrt_t = np.sqrt(t)
+    v_sqrt_t = v * sqrt_t
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    d2 = d1 - vsqrtT
-    theta = - ss * n_prime_vect(d1) * v / 2.0 / sqrtT
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    d2 = d1 - v_sqrt_t
+    theta = - ss * n_prime_vect(d1) * v / 2.0 / sqrt_t
     theta = theta - phi * r * k * np.exp(-r*t) * n_vect(phi * d2)
     theta = theta + phi * q * ss * n_vect(phi * d1)
     return theta
@@ -143,23 +138,23 @@ def bs_theta(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_rho(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
 
     if option_type_value == OptionTypes.EUROPEAN_CALL.value:
         phi = 1.0
     elif option_type_value == OptionTypes.EUROPEAN_PUT.value:
         phi = -1.0
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    sqrtT = np.sqrt(t)
-    vsqrtT = v * sqrtT
+    sqrt_t = np.sqrt(t)
+    v_sqrt_t = v * sqrt_t
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    d2 = d1 - vsqrtT
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    d2 = d1 - v_sqrt_t
     rho = phi * k * t * np.exp(-r*t) * n_vect(phi * d2)
     return rho
 
@@ -169,26 +164,25 @@ def bs_rho(s, t, k, r, q, v, option_type_value):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, float64, int64)], fastmath=True, cache=True)
 def bs_vanna(s, t, k, r, q, v, option_type_value):
-    """ Price a derivative using Black-Scholes model. """
+    """Price a derivative using Black-Scholes model."""
 
-    k = np.maximum(k, gSmall)
-    t = np.maximum(t, gSmall)
-    v = np.maximum(v, gSmall)
+    k = np.maximum(k, g_small)
+    t = np.maximum(t, g_small)
+    v = np.maximum(v, g_small)
 
-    sqrtT = np.sqrt(t)
-    vsqrtT = v * sqrtT
+    sqrt_t = np.sqrt(t)
+    v_sqrt_t = v * sqrt_t
     ss = s * np.exp(-q*t)
     kk = k * np.exp(-r*t)
-    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    d2 = d1 - vsqrtT
-    vanna = np.exp(-q*t) * sqrtT * n_prime_vect(d1) * (d2/v)
+    d1 = np.log(ss/kk) / v_sqrt_t + v_sqrt_t / 2.0
+    d2 = d1 - v_sqrt_t
+    vanna = np.exp(-q*t) * sqrt_t * n_prime_vect(d1) * (d2/v)
     return vanna
 
 ###############################################################################
 
+
 @njit(fastmath=True, cache=True)
-
-
 def _f(sigma, args):
 
     s = args[0]
@@ -199,11 +193,12 @@ def _f(sigma, args):
     price = args[5]
     option_type_value = int(args[6])
 
-    bsPrice = bs_value(s, t, k, r, q, sigma, option_type_value)
-    obj = bsPrice - price
+    bs_price = bs_value(s, t, k, r, q, sigma, option_type_value)
+    obj = bs_price - price
     return obj
 
 ##############################################################################
+
 
 @njit(fastmath=True, cache=True)
 def _fvega(sigma, args):
@@ -223,8 +218,8 @@ def _fvega(sigma, args):
 @vectorize([float64(float64, float64, float64, float64,
                     float64, int64)], fastmath=True, cache=True)
 def bs_intrinsic(s, t, k, r, q, option_type_value):
-    """ Calculate the Black-Scholes implied volatility of a European 
-    vanilla option using Newton with a fallback to bisection. """
+    """Calculate the Black-Scholes implied volatility of a European
+     vanilla option using Newton with a fallback to bisection."""
 
     fwd = s * np.exp((r-q)*t)
 
@@ -238,11 +233,11 @@ def bs_intrinsic(s, t, k, r, q, option_type_value):
 ###############################################################################
 
 
-# @vectorize([float64(float64, float64, float64, float64, float64, float64,
-#                    int64)], fastmath=True, cache=True,  forceobj=True)
+@vectorize([float64(float64, float64, float64, float64, float64, float64,
+                    int64)], fastmath=True, cache=True,  forceobj=True)
 def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
-    """ Calculate the Black-Scholes implied volatility of a European 
-    vanilla option using Newton with a fallback to bisection. """
+    """Calculate the Black-Scholes implied volatility of a European
+     vanilla option using Newton with a fallback to bisection."""
 
     fwd = s * np.exp((r-q)*t)
 
@@ -251,17 +246,17 @@ def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
     else:
         intrinsic_value = np.exp(-r*t) * max(k - fwd, 0.0)
 
-    divAdjStockPrice = s * np.exp(-q * t)
+    div_adj_stock_price = s * np.exp(-q * t)
     df = np.exp(-r * t)
 
     # Flip ITM call option to be OTM put and vice-versa using put call parity
     if intrinsic_value > 0.0:
 
         if option_type_value == OptionTypes.EUROPEAN_CALL.value:
-            price = price - (divAdjStockPrice - k * df)
+            price = price - (div_adj_stock_price - k * df)
             option_type_value = OptionTypes.EUROPEAN_PUT.value
         else:
-            price = price + (divAdjStockPrice - k * df)
+            price = price + (div_adj_stock_price - k * df)
             option_type_value = OptionTypes.EUROPEAN_CALL.value
 
         # Update intrinsic based on new option type
@@ -270,11 +265,11 @@ def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
         else:
             intrinsic_value = np.exp(-r*t) * max(k - fwd, 0.0)
 
-    timeValue = price - intrinsic_value
+    time_value = price - intrinsic_value
 
     # Add a tolerance in case it is just numerical imprecision
-    if timeValue < 0.0:
-        print("Time value", timeValue)
+    if time_value < 0.0:
+        print("Time value", time_value)
         raise FinError("Option Price is below the intrinsic value")
 
     ###########################################################################
@@ -282,9 +277,9 @@ def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
     ###########################################################################
 
     if option_type_value == OptionTypes.EUROPEAN_CALL.value:
-        C = price
+        call = price
     else:
-        C = price + (divAdjStockPrice - k * df)
+        call = price + (div_adj_stock_price - k * df)
 
     # Notation in SSRN-id567721.pdf
     X = k * np.exp(-r*t)
@@ -318,12 +313,10 @@ def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
 
     hsigma = 0.0
     gamma = 2.0
-    arg = (2*C+X-S)**2 - gamma * (S+X)*(S-X)*(S-X) / pi / S
+    arg = (2*call+X-S)**2 - gamma * (S+X)*(S-X)*(S-X) / pi / S
+    arg = max(arg, 0.0)
 
-    if arg < 0.0:
-        arg = 0.0
-
-    hsigma = (2 * C + X - S + np.sqrt(arg))
+    hsigma = 2.0 * call + X - S + np.sqrt(arg)
     hsigma = hsigma * np.sqrt(2.0*pi) / 2.0 / (S+X)
     hsigma = hsigma / np.sqrt(t)
 
@@ -363,7 +356,7 @@ def bs_implied_volatility(s, t, k, r, q, price, option_type_value):
 
 @njit(fastmath=True, cache=True)
 def _fcall(si, *args):
-    """ Function to determine ststar for pricing American call options. """
+    """Function to determine ststar for pricing American call options."""
 
     t = args[0]
     k = args[1]
@@ -374,11 +367,11 @@ def _fcall(si, *args):
     b = r - q
     v2 = v*v
 
-    M = 2.0 * r / v2
-    W = 2.0 * b / v2
-    K = 1.0 - np.exp(-r * t)
+    mm = 2.0 * r / v2
+    ww = 2.0 * b / v2
+    kk = 1.0 - np.exp(-r * t)
 
-    q2 = (1.0 - W + np.sqrt((W - 1.0)**2 + 4.0 * M/K)) / 2.0
+    q2 = (1.0 - ww + np.sqrt((ww - 1.0)**2 + 4.0 * mm/kk)) / 2.0
     d1 = (np.log(si / k) + (b + v2 / 2.0) * t) / (v * np.sqrt(t))
 
     obj_fn = si - k
@@ -391,7 +384,7 @@ def _fcall(si, *args):
 
 @njit(fastmath=True, cache=True)
 def _fput(si, *args):
-    """ Function to determine sstar for pricing American put options. """
+    """Function to determine sstar for pricing American put options."""
 
     t = args[0]
     k = args[1]
@@ -419,8 +412,8 @@ def _fput(si, *args):
 
 @njit(fastmath=True)
 def baw_value(s, t, k, r, q, v, phi):
-    """ American Option Pricing Approximation using the Barone-Adesi-Whaley
-    approximation for the Black Scholes Model """
+    """American Option Pricing Approximation using the Barone-Adesi-Whaley
+     approximation for the Black Scholes Model"""
 
     b = r - q
 
@@ -442,19 +435,15 @@ def baw_value(s, t, k, r, q, v, phi):
         A2 = (sstar / q2) * (1.0 - np.exp(-q * t) * n_vect(d1))
 
         if s < sstar:
-            return bs_value(s, t, k, r, q, v, +1) + A2 * ((s/sstar)**q2)
-        else:
-            return s - k
+            return bs_value(s, t, k, r, q, v, OptionTypes.EUROPEAN_CALL.value) + A2 * ((s/sstar)**q2)
+
+        return s - k
 
     elif phi == -1:
 
         argtuple = (t, k, r, q, v)
 
-#        sstar = optimize.newton(_fput, x0=s, fprime=None, args=argtuple,
-#                                tol=1e-7, maxiter=50, fprime2=None)
-
-        sstar = newton_secant(_fput, x0=s, args=argtuple,
-                              tol=1e-7, maxiter=50)
+        sstar = newton_secant(_fput, x0=s, args=argtuple, tol=1e-7, maxiter=50)
 
         v2 = v * v
 
@@ -466,7 +455,8 @@ def baw_value(s, t, k, r, q, v, phi):
         a1 = -(sstar / q1) * (1 - np.exp(-q * t) * n_vect(-d1))
 
         if s > sstar:
-            return bs_value(s, t, k, r, q, v, -1) + a1 * ((s/sstar)**q1)
+            bsv = bs_value(s, t, k, r, q, v, OptionTypes.EUROPEAN_PUT.value)
+            return bsv + a1 * ((s/sstar)**q1)
         else:
             return k - s
 
@@ -477,16 +467,48 @@ def baw_value(s, t, k, r, q, v, phi):
 ###############################################################################
 
 
-if __name__ == '__main__':
-    # spot_price, strike_price, time_to_expiry, r, b, vol, phi
+@njit(fastmath=True)
+def bjerksund_stensland_value(s, t, k, r, q, v, option_type_value):
+    """Price American Option using the Bjerksund-Stensland
+     approximation (1993) for the Black Scholes Model"""
+    if option_type_value == OptionTypes.AMERICAN_CALL.value:
+        pass
+    elif option_type_value == OptionTypes.AMERICAN_PUT.value:
+        # put-call transformation
+        s, k, r, q = k, s, r-q, -q
+    else:
+        return 0.0
 
-    # Checking against table 3-1 in Haug
-    k = 100.0
-    r = 0.10
-    q = 0.10
+    def phi(S, T, gamma, H, X):
+        """Eq.(13) in Bjerksund-Stensland approximation (1993)."""
+        nonlocal r, q
+        lambda0 = (-r + gamma * q + 0.5 * gamma *
+                   (gamma - 1.0) * v**2) * T
+        d = - (np.log(S/H) + (q + (gamma - 0.5) * v**2) * T) / \
+            (v * np.sqrt(t))
+        kappa = (2.0 * gamma - 1.0) + (2.0 * q) / v**2
+        return (
+            np.exp(lambda0) * (S ** gamma)
+            * (N(d) - N(d - (2.0 * np.log(X/S)/v/np.sqrt(T))) * ((X/S)**kappa))
+        )
 
-    for t in [0.1, 0.5]:
-        for v in [0.15, 0.25, 0.35]:
-            for s in [90.0, 100.0, 110.0]:
-                bawPrice = baw_value(s, t, k, r, q, v, +1)
-                print("%9.5f %9.5f %9.5f %9.5f" % (s, t, v, bawPrice))
+    # calc trigger price x_t
+    beta = (0.5 - q/(v**2)) + np.sqrt((0.5 - q/(v**2))**2 + 2.0 * r/(v**2))
+    # avoid division by zero
+    if abs(r-q) < 1.e-10:
+        beta = 1.0
+        x_t = 1.e10
+    else:
+        b_infty = k * beta / (beta - 1.0)
+        b_0 = max(k, k * r/((r-q)))
+        h_t = -(q*t + 2.0 * v * np.sqrt(t)) * (b_0 / (b_infty - b_0))
+        x_t = b_0 + (b_infty - b_0) * (1.0 - np.exp(h_t))
+    # calc option value
+    alpha = (x_t - k) * x_t ** (-beta)
+    value = (alpha * (s**beta) - alpha * phi(s, t, beta, x_t, x_t)
+             + phi(s, t, 1.0, x_t, x_t) - phi(s, t, 1.0, k, x_t)
+             - k * phi(s, t, 0.0, x_t, x_t) + k * phi(s, t, 0.0, k, x_t))
+
+    return value
+
+###############################################################################
